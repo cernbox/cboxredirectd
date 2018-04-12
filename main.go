@@ -21,10 +21,11 @@ func main() {
 	gc.Add("app-log", "stderr", "file to log application information")
 	gc.Add("http-log", "stderr", "file to log http log information")
 	gc.Add("log-level", "info", "log level to use (debug, info, warn, error)")
-	gc.Add("old-server", "", "server to forward requests for non-migrated users")
-	gc.Add("new-server", "", "server to forward requests for migrated/new users")
+	gc.Add("old-proxy", "", "server to forward requests for non-migrated users")
+	gc.Add("new-proxy", "", "server to forward requests for migrated/new users")
 	gc.Add("read-timeout", 90, "server read timeout")
 	gc.Add("write-timeout", 90, "server write timeout")
+	gc.Add("redis-tcp-address", "localhost:6379", "redis tcp address")
 	gc.Add("redis-read-timeout", 0, "redis read timeout")
 	gc.Add("redis-write-timeout", 0, "redis write timeout")
 	gc.Add("redis-dial-timeout", 0, "redis dial timeout")
@@ -39,7 +40,7 @@ func main() {
 	logger := gologger.New(gc.GetString("log-level"), gc.GetString("app-log"))
 
 	migratorOpts := &redismigrator.Options{
-		Address:            gc.GetString("tcp-address"),
+		Address:            gc.GetString("redis-tcp-address"),
 		DialTimeout:        gc.GetInt("redis-dial-timeout"),
 		IdleCheckFrequency: gc.GetInt("redis-idle-check-frequency"),
 		IdleTimeout:        gc.GetInt("redis-idle-timeout"),
