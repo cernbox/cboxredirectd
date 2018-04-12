@@ -50,6 +50,7 @@ func New(opts *Options) (http.Handler, error) {
 		oldProxy: oldProxy,
 		newProxy: newProxy,
 		migrator: opts.Migrator,
+		logger:   opts.Logger,
 	}, nil
 
 }
