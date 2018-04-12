@@ -23,17 +23,25 @@ func main() {
 	gc.Add("log-level", "info", "log level to use (debug, info, warn, error)")
 	gc.Add("old-proxy", "", "server to forward requests for non-migrated users")
 	gc.Add("new-proxy", "", "server to forward requests for migrated/new users")
-	gc.Add("read-timeout", 90, "server read timeout")
-	gc.Add("write-timeout", 90, "server write timeout")
+	gc.Add("http-read-timeout", 300, "the maximum duration for reading the entire request, including the body.")
+	gc.Add("http-write-timeout", 300, "the maximum duration before timing out writes of the response.")
+
 	gc.Add("redis-tcp-address", "localhost:6379", "redis tcp address")
-	gc.Add("redis-read-timeout", 0, "redis read timeout")
-	gc.Add("redis-write-timeout", 0, "redis write timeout")
-	gc.Add("redis-dial-timeout", 0, "redis dial timeout")
-	gc.Add("redis-idle-check-frequency", 0, "redis idle check frequency")
-	gc.Add("redis-idle-timeout", 0, "redis idle timeout")
-	gc.Add("redis-max-retries", 0, "redis max retries")
-	gc.Add("redis-pool-size", 0, "redis pool size")
-	gc.Add("redis-pool-timeout", 0, "redis pool timeout")
+	gc.Add("redis-read-timeout", 3, "timeout for socket reads. If reached, commands will fail with a timeout instead of blocking. Zero means default.")
+	gc.Add("redis-write-timeout", 0, "timeout for socket writes. If reached, commands will fail with a timeout instead of blocking. Zero means redis-read-timeout.")
+	gc.Add("redis-dial-timeout", 5, "dial timeout for establishing new connections. Zero means default.")
+	gc.Add("redis-idle-check-frequency", 60, "frequency of idle checks. Zero means default. When minus value is set, then idle check is disabled.")
+	gc.Add("redis-idle-timeout", 300, "amount of time after which client closes idle connections. Should be less than server's timeout. Zero means default.")
+	gc.Add("redis-max-retries", 0, "maximum number of retries before giving up. Zero means not retry failed commands.")
+	gc.Add("redis-pool-size", 0, "maximum number of socket connections. Zermo means 10 connections per every CPU as reported by runtime.NumCPU.")
+	gc.Add("redis-pool-timeout", 0, "time a client waits for connection if all connections are busy before returning an error. Zero means redis-read-timeout + 1 second.")
+
+	gc.Add("proxy-disable-keep-alives", false, "if true, prevents re-use of TCP connections between different HTTP requests.")
+	gc.Add("proxy-max-idle-conns", 0, "controls the maximum number of idle (keep-alive) connections across all hosts. Zero means no limit.")
+	gc.Add("proxy-max-idle-conns-per-host", 2, "if non-zero, controls the maximum idle (keep-alive) connections to keep per-host. If zero, default is used.")
+	gc.Add("proxy-idle-conn-timeout", 0, "the maximum amount of time an idle (keep-alive) connection will remain idle before closing itself. Zero means no limit.")
+	gc.Add("proxy-tls-insecure-skip-verify", false, "controls whether a client verifies the server's certificate chain and host name.")
+
 	gc.BindFlags()
 	gc.ReadConfig()
 
@@ -58,10 +66,15 @@ func main() {
 	}
 
 	proxyOpts := &proxy.Options{
-		Logger:       logger,
-		Migrator:     migrator,
-		NewServerURL: gc.GetString("new-proxy"),
-		OldServerURL: gc.GetString("old-proxy"),
+		Logger:              logger,
+		Migrator:            migrator,
+		NewProxyURL:         gc.GetString("new-proxy"),
+		OldProxyURL:         gc.GetString("old-proxy"),
+		DisableKeepAlives:   gc.GetBool("proxy-disable-keep-alives"),
+		MaxIdleConns:        gc.GetInt("proxy-max-idle-conns"),
+		MaxIdleConnsPerHost: gc.GetInt("proxy-max-idle-conns-per-host"),
+		IdleConnTimeout:     gc.GetInt("proxy-idle-conn-timeout"),
+		InsecureSkipVerify:  gc.GetBool("proxy-tls-insecure-skip-verify"),
 	}
 	proxyHandler, err := proxy.New(proxyOpts)
 	if err != nil {
@@ -74,8 +87,8 @@ func main() {
 
 	s := http.Server{
 		Addr:         gc.GetString("tcp-address"),
-		ReadTimeout:  time.Second * time.Duration(gc.GetInt("read-timeout")),
-		WriteTimeout: time.Second * time.Duration(gc.GetInt("write-timeout")),
+		ReadTimeout:  time.Second * time.Duration(gc.GetInt("http-read-timeout")),
+		WriteTimeout: time.Second * time.Duration(gc.GetInt("http-write-timeout")),
 		Handler:      loggedRouter,
 	}
 

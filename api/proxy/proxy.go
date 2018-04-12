@@ -2,9 +2,11 @@ package proxy
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"github.com/cernbox/cboxredirectd/api"
 
@@ -12,10 +14,15 @@ import (
 )
 
 type Options struct {
-	OldServerURL string
-	NewServerURL string
-	Logger       *zap.Logger
-	Migrator     api.Migrator
+	OldProxyURL         string
+	NewProxyURL         string
+	Logger              *zap.Logger
+	Migrator            api.Migrator
+	InsecureSkipVerify  bool
+	DisableKeepAlives   bool
+	MaxIdleConns        int
+	MaxIdleConnsPerHost int
+	IdleConnTimeout     int
 }
 
 func (opts *Options) init() {
@@ -26,31 +33,44 @@ func (opts *Options) init() {
 }
 
 type proxy struct {
-	oldProxy *httputil.ReverseProxy
-	newProxy *httputil.ReverseProxy
-	migrator api.Migrator
-	logger   *zap.Logger
+	oldProxy           *httputil.ReverseProxy
+	newProxy           *httputil.ReverseProxy
+	migrator           api.Migrator
+	logger             *zap.Logger
+	insecureSkipVerify bool
 }
 
 func New(opts *Options) (http.Handler, error) {
 	opts.init()
-	oldURL, err := url.Parse(opts.OldServerURL)
+	oldURL, err := url.Parse(opts.OldProxyURL)
 	if err != nil {
 		return nil, err
 	}
-	newURL, err := url.Parse(opts.NewServerURL)
+	newURL, err := url.Parse(opts.NewProxyURL)
 	if err != nil {
 		return nil, err
+	}
+
+	t := &http.Transport{
+		DisableKeepAlives:   opts.DisableKeepAlives,
+		IdleConnTimeout:     time.Duration(opts.IdleConnTimeout) * time.Second,
+		MaxIdleConns:        opts.MaxIdleConns,
+		MaxIdleConnsPerHost: opts.MaxIdleConnsPerHost,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: opts.InsecureSkipVerify},
 	}
 
 	oldProxy := httputil.NewSingleHostReverseProxy(oldURL)
 	newProxy := httputil.NewSingleHostReverseProxy(newURL)
 
+	oldProxy.Transport = t
+	newProxy.Transport = t
+
 	return &proxy{
-		oldProxy: oldProxy,
-		newProxy: newProxy,
-		migrator: opts.Migrator,
-		logger:   opts.Logger,
+		oldProxy:           oldProxy,
+		newProxy:           newProxy,
+		migrator:           opts.Migrator,
+		logger:             opts.Logger,
+		insecureSkipVerify: opts.InsecureSkipVerify,
 	}, nil
 
 }
