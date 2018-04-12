@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Authentication daemon for CERNBox.
-Version: 1.1.0
+Version: 1.0.0
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
