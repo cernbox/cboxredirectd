@@ -55,4 +55,5 @@ rm -rf %buildroot/
 
 %changelog
 * Thu Apr 12 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.0
+- v1.0.0
 
