@@ -60,8 +60,8 @@ func main() {
 	proxyOpts := &proxy.Options{
 		Logger:       logger,
 		Migrator:     migrator,
-		NewServerURL: gc.GetString("new-server"),
-		OldServerURL: gc.GetString("old-server"),
+		NewServerURL: gc.GetString("new-proxy"),
+		OldServerURL: gc.GetString("old-proxy"),
 	}
 	proxyHandler, err := proxy.New(proxyOpts)
 	if err != nil {
