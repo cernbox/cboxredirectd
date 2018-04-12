@@ -7,8 +7,8 @@
     "goconfig",
     "gologger"
   ]
-  revision = "b6e350fc8d914b88b95b4d9f9e69efe997ffa826"
-  version = "v1.0.0"
+  revision = "7c70591f4c29d71b0a2a0e65f410517b1e94edd5"
+  version = "v1.0.1"
 
 [[projects]]
   name = "github.com/fsnotify/fsnotify"
