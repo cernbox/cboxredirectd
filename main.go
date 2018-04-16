@@ -25,6 +25,9 @@ func main() {
 	gc.Add("new-proxy", "", "server to forward requests for migrated/new users")
 	gc.Add("http-read-timeout", 300, "the maximum duration for reading the entire request, including the body.")
 	gc.Add("http-write-timeout", 300, "the maximum duration before timing out writes of the response.")
+	gc.Add("tls-cert", "/etc/grid-security/hostcert.pem", "TLS certificate to encrypt connections.")
+	gc.Add("tls-key", "/etc/grid-security/hostkey.pem", "TLS private key to encrypt connections.")
+	gc.Add("tls-enable", false, "Enable TLS for encrypting connections.")
 
 	gc.Add("redis-tcp-address", "localhost:6379", "redis tcp address")
 	gc.Add("redis-read-timeout", 3, "timeout for socket reads. If reached, commands will fail with a timeout instead of blocking. Zero means default.")
@@ -92,11 +95,17 @@ func main() {
 		Handler:      loggedRouter,
 	}
 
-	logger.Info("server is listening at: " + gc.GetString("tcp-address"))
-	err = s.ListenAndServe()
-	if err != nil {
-		logger.Error("server exited with error", zap.Error(err))
+	logger.Info("server is listening", zap.String("tcp-address", gc.GetString("tcp-address")), zap.Bool("tls-enabled", gc.GetBool("tls-enable")), zap.String("tls-cert", gc.GetString("tls-cert")), zap.String("tls-key", gc.GetString("tls-key")))
+	var listenErr error
+	if gc.GetBool("tls-enable") {
+		listenErr = s.ListenAndServeTLS(gc.GetString("tls-cert"), gc.GetString("tls-key"))
 	} else {
-		logger.Error("server exited without error")
+		listenErr = s.ListenAndServe()
+	}
+
+	if listenErr != nil {
+		logger.Error("server exited with error", zap.Error(listenErr))
+	} else {
+		logger.Info("server exited without error")
 	}
 }
