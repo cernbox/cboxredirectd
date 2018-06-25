@@ -84,7 +84,6 @@ func (m *migrator) IsPathMigrated(ctx context.Context, path, username string) (b
 		key := "/eos/user/" + string(username[0]) + "/" + username
 		val, err := m.client.Get(key).Result()
 		if err != nil {
-			m.logger.Error("", zap.Error(err))
 
 			// user is not in the database, so it is a new user
 			// and should be forwarded to the new instance.
@@ -92,6 +91,7 @@ func (m *migrator) IsPathMigrated(ctx context.Context, path, username string) (b
 				m.logger.Debug("user not found in Redis", zap.String("path", path), zap.String("username", username))
 				return true, nil
 			}
+			m.logger.Error("", zap.Error(err))
 			return false, err
 		}
 		if val == migrated {
@@ -108,21 +108,21 @@ func (m *migrator) IsPathMigrated(ctx context.Context, path, username string) (b
 	// the path does not start with /home, so we compare it agains all the path prefixes stored on Redis.
 	prefix := m.getMigrationPrefix(ctx, path)
 	if prefix == "" {
+		// redirect back to old server for paths we don't know about to be safe
 		err := errors.New("prefix is empty")
 		m.logger.Error("", zap.Error(err), zap.String("path", path))
-		return false, err
+		return false, nil
 	}
 
 	val, err := m.client.Get(prefix).Result()
 	if err != nil {
-		m.logger.Error("", zap.Error(err))
-
 		// prefix is not in the database, so it is a new path/user
 		// and should be forwarded to the new instance.
 		if err == redis.Nil {
 			m.logger.Debug("path prefix not found in Redis", zap.String("path", path), zap.String("prefix", prefix), zap.String("username", username))
 			return true, nil
 		}
+		m.logger.Error("", zap.Error(err))
 		return false, err
 	}
 	if val == migrated {
@@ -133,7 +133,7 @@ func (m *migrator) IsPathMigrated(ctx context.Context, path, username string) (b
 		m.logger.Debug("path prefix found in Redis, path is not-migrated", zap.String("path", path), zap.String("username", username))
 		return false, nil
 	}
-	return false, fmt.Errorf("value for username(%s) is not valid (%s)", username, val)
+	return false, fmt.Errorf("value for prefix(%s) is not valid (%s)", prefix, val)
 
 }
 

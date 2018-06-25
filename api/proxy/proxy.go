@@ -111,7 +111,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// is user is migrated forward request to new server.
+	// if user is migrated forward request to new server.
 	ok, err := p.isPathMigrated(r.Context(), cernboxPath, username)
 	if err != nil {
 		// abort request as we don't know the state of the user migration
