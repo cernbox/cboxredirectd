@@ -84,7 +84,7 @@ func (p *proxy) getCERNBoxPath(ctx context.Context, u *url.URL) string {
 		return ""
 	}
 
-	cernboxPath := urlPath[index:]
+	cernboxPath := urlPath[index+len("remote.php/webdav"):]
 	cernboxPath = path.Join("/", path.Clean(cernboxPath))
 	p.logger.Debug("extract of cernbox path", zap.String("url_path", urlPath), zap.String("cbox_path", cernboxPath))
 	return cernboxPath
