@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/cernbox/cboxredirectd/api"
@@ -75,6 +77,20 @@ func New(opts *Options) (http.Handler, error) {
 
 }
 
+func (p *proxy) getCERNBoxPath(ctx context.Context, u *url.URL) string {
+	urlPath := u.Path
+	index := strings.Index(urlPath, "remote.php/webdav")
+	if index == -1 {
+		return ""
+	}
+
+	cernboxPath := urlPath[index:]
+	cernboxPath = path.Join("/", path.Clean(cernboxPath))
+	p.logger.Debug("extract of cernbox path", zap.String("url_path", urlPath), zap.String("cbox_path", cernboxPath))
+	return cernboxPath
+
+}
+
 func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	username, _, ok := r.BasicAuth()
 
@@ -88,8 +104,15 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cernboxPath := p.getCERNBoxPath(r.Context(), r.URL)
+	if cernboxPath == "/" { // the path does not point to a valid remote.php/webdav/{path}
+		p.logger.Info("cernboxPath is not valid for redirection logic", zap.String("forward", "old-proxy"))
+		p.oldProxy.ServeHTTP(w, r)
+		return
+	}
+
 	// is user is migrated forward request to new server.
-	ok, err := p.isMigrated(r.Context(), username)
+	ok, err := p.isPathMigrated(r.Context(), cernboxPath, username)
 	if err != nil {
 		// abort request as we don't know the state of the user migration
 		p.logger.Error("user is in inconsistent migration state: manual action required", zap.Error(err))
@@ -109,8 +132,8 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func (p *proxy) isMigrated(ctx context.Context, username string) (bool, error) {
-	ok, err := p.migrator.IsUserMigrated(ctx, username)
+func (p *proxy) isPathMigrated(ctx context.Context, path string, username string) (bool, error) {
+	ok, err := p.migrator.IsPathMigrated(ctx, path, username)
 	if err != nil {
 		p.logger.Error("", zap.Error(err))
 		return false, err
