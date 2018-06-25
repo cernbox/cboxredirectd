@@ -160,8 +160,9 @@ func (m *migrator) getMigrationPrefix(ctx context.Context, p string) string {
 	if len(tokens) > 1 {
 		if len(tokens[0]) == 1 { // l/labradorsvc
 			prefix = path.Join(prefix, path.Join(tokens[0:2]...))
+		} else {
+			prefix = path.Join(prefix, tokens[0]) // csc/Docs
 		}
-		prefix = path.Join(prefix, tokens[0]) // csc/Docs
 	}
 	if len(tokens) == 1 {
 		prefix = path.Join(prefix, tokens[0])
