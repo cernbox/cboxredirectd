@@ -38,6 +38,7 @@ func main() {
 	gc.Add("redis-max-retries", 0, "maximum number of retries before giving up. Zero means not retry failed commands.")
 	gc.Add("redis-pool-size", 0, "maximum number of socket connections. Zermo means 10 connections per every CPU as reported by runtime.NumCPU.")
 	gc.Add("redis-pool-timeout", 0, "time a client waits for connection if all connections are busy before returning an error. Zero means redis-read-timeout + 1 second.")
+	gc.Add("redis-password", "", "the password to authenticate to a protected Redis instance. Empty means no authentication.")
 
 	gc.Add("proxy-disable-keep-alives", false, "if true, prevents re-use of TCP connections between different HTTP requests.")
 	gc.Add("proxy-max-idle-conns", 0, "controls the maximum number of idle (keep-alive) connections across all hosts. Zero means no limit.")
@@ -61,6 +62,7 @@ func main() {
 		PoolTimeout:        gc.GetInt("redis-pool-timeout"),
 		ReadTimeout:        gc.GetInt("redis-read-timeout"),
 		WriteTimeout:       gc.GetInt("redis-write-timeout"),
+		Password:           gc.GetString("redis-password"),
 	}
 	migrator, err := redismigrator.New(migratorOpts)
 	if err != nil {
