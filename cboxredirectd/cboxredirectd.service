@@ -1,0 +1,16 @@
+[Unit]
+Description=Redirector daemon for CERNBox
+After=syslog.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/var/log/cboxredirectd
+ExecStart=/usr/local/bin/cboxredirectd
+StandardOutput=null
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
+
