@@ -3,6 +3,8 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -92,27 +94,41 @@ func (p *proxy) getCERNBoxPath(ctx context.Context, u *url.URL) string {
 }
 
 func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	username, _, ok := r.BasicAuth()
+
+	defaultVal, err := p.migrator.GetDefaultKey(ctx)
+	if err != nil {
+		p.logger.Error("error getting the default key, aborting request", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	_, err = p.migrator.GetIDoNotKnowWhatToDoKey(ctx)
+	if err != nil {
+		p.logger.Error("error getting the i do not know what to do key, aborting request", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	p.logger.Info("incoming request", zap.String("username", username))
 
-	// redirect to old server if no basic auth is provided or
-	// username is empty.
+	// if no basic auth is provided (no user context) or username is empty
+	// apply default rule
 	if !ok || username == "" {
-		p.logger.Info("request without basic auth or empty username", zap.String("forward", "old-proxy"))
-		p.oldProxy.ServeHTTP(w, r)
+		p.logger.Info("request without basic auth or empty username", zap.String("forward", string(defaultVal)))
+		p.applyDefault(defaultVal, w, r)
 		return
 	}
 
 	cernboxPath := p.getCERNBoxPath(r.Context(), r.URL)
 	if cernboxPath == "/" { // the path does not point to a valid remote.php/webdav/{path}
-		p.logger.Info("cernboxPath is not valid for redirection logic", zap.String("forward", "old-proxy"))
-		p.oldProxy.ServeHTTP(w, r)
+		p.logger.Info("cernboxPath is not valid for redirection logic", zap.String("forward", string(defaultVal)), zap.String("url", r.URL.Path), zap.String("cernbox_path", cernboxPath))
+		p.applyDefault(defaultVal, w, r)
 		return
 	}
 
-	// if user is migrated forward request to new server.
-	ok, err := p.isPathMigrated(r.Context(), cernboxPath, username)
+	ok, err = p.isPathMigrated(r.Context(), cernboxPath, username)
 	if err != nil {
 		// abort request as we don't know the state of the user migration
 		p.logger.Error("user is in inconsistent migration state: manual action required", zap.Error(err))
@@ -120,16 +136,35 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// if user is migrated forward request to new server.
 	if ok {
-		p.logger.Info("username has been migrated or is a new user", zap.String("forward", "new-proxy"))
+		p.logger.Info("username has been migrated or is a new user", zap.String("username", username), zap.String("forward", "new-proxy"))
 		p.newProxy.ServeHTTP(w, r)
 		return
 	}
 
 	// user is not yet migrated, forward to old server.
-	p.logger.Info("username is not yet migrated", zap.String("forward", "old-proxy"))
+	p.logger.Info("username is not yet migrated", zap.String("forward", "old-proxy"), zap.String("username", username))
 	p.oldProxy.ServeHTTP(w, r)
 	return
+}
+
+func (p *proxy) applyDefault(defaultVal api.DefaultProxyKey, w http.ResponseWriter, r *http.Request) {
+	p.logger.Info("applying default rule", zap.String("default", string(defaultVal)))
+	if defaultVal == api.OldProxyKey {
+		p.oldProxy.ServeHTTP(w, r)
+		return
+	}
+
+	if defaultVal == api.NewProxyKey {
+		p.newProxy.ServeHTTP(w, r)
+		return
+	}
+
+	// defaultVal is not known
+	err := errors.New(fmt.Sprintf("val for %s is not known: %s", "default proxy key", defaultVal))
+	p.logger.Error("", zap.Error(err))
+	w.WriteHeader(http.StatusInternalServerError)
 }
 
 func (p *proxy) isPathMigrated(ctx context.Context, path string, username string) (bool, error) {

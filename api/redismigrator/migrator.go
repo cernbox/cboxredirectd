@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	migrated     = "migrated"
-	not_migrated = "not-migrated"
+	defaultKey    = "default-proxy"
+	iDoNotKnowKey = "i-do-not-know-what-to-do"
+	migrated      = "migrated"
+	not_migrated  = "not-migrated"
 )
 
 type Options struct {
@@ -28,6 +30,7 @@ type Options struct {
 	ReadTimeout        int
 	WriteTimeout       int
 	MaxRetries         int
+	Password           string
 	Logger             *zap.Logger
 }
 
@@ -60,6 +63,11 @@ func New(opts *Options) (api.Migrator, error) {
 		WriteTimeout:       time.Duration(opts.WriteTimeout) * time.Second,
 		MaxRetries:         opts.MaxRetries,
 	}
+
+	if opts.Password != "" {
+		redisOpts.Password = opts.Password
+	}
+
 	redisClient := redis.NewClient(redisOpts)
 	m := &migrator{
 		client: redisClient,
@@ -68,14 +76,65 @@ func New(opts *Options) (api.Migrator, error) {
 	return m, nil
 }
 
+func (m *migrator) GetDefaultKey(ctx context.Context) (api.DefaultProxyKey, error) {
+	val, err := m.client.Get(defaultKey).Result()
+	if err != nil {
+		m.logger.Error("", zap.Error(err))
+		return "", err
+	}
+
+	if val == string(api.OldProxyKey) {
+		return api.OldProxyKey, nil
+	}
+
+	if val == string(api.NewProxyKey) {
+		return api.NewProxyKey, nil
+	}
+
+	// val is not known
+	return "", errors.New(fmt.Sprintf("val for %s is not known: %s", defaultKey, val))
+}
+
+func (m *migrator) GetIDoNotKnowWhatToDoKey(ctx context.Context) (api.IDoNotKnowWhatToDoKey, error) {
+	val, err := m.client.Get(iDoNotKnowKey).Result()
+	if err != nil {
+		m.logger.Error("", zap.Error(err))
+		return "", err
+	}
+
+	if val == string(api.IDoNotKnowNewProxyKey) {
+		return api.IDoNotKnowNewProxyKey, nil
+	}
+
+	if val == string(api.IDoNotKnowOldProxyKey) {
+		return api.IDoNotKnowOldProxyKey, nil
+	}
+
+	if val == string(api.IDoNotKnowPanicKey) {
+		return api.IDoNotKnowPanicKey, nil
+	}
+
+	// val is not known
+	return "", errors.New(fmt.Sprintf("val for %s is not known: %s", iDoNotKnowKey, val))
+}
+
 // isPathMigrated decides if the user has to be migrated to the new proxy or not.
 // path is always a valid path after the remote.php/webdav/ endopoint, like:
 // - /home/Photos/...
 // - /eos/user/l/labradorsvc/Docs/...
 // - /eos/project/c/cbox/Manual/...
 func (m *migrator) IsPathMigrated(ctx context.Context, path, username string) (bool, error) {
+	defaultVal, err := m.GetDefaultKey(ctx)
+	if err != nil {
+		return false, err
+	}
 
-	m.logger.Debug("migration check for", zap.String("path", path), zap.String("username", username))
+	iDoNotKnowVal, err := m.GetIDoNotKnowWhatToDoKey(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	m.logger.Debug("migration check for", zap.String("path", path), zap.String("username", username), zap.String("default", string(defaultVal)), zap.String("idonotknow", string(iDoNotKnowVal)))
 
 	// if the path is a /home path, relative to the user, we check in Redis has an entry for
 	// u-gonzalhu
@@ -85,11 +144,14 @@ func (m *migrator) IsPathMigrated(ctx context.Context, path, username string) (b
 		val, err := m.client.Get(key).Result()
 		if err != nil {
 
-			// user is not in the database, so it is a new user
-			// and should be forwarded to the new instance.
+			// user is not in the database, apply what the defaultKey says
 			if err == redis.Nil {
 				m.logger.Debug("user not found in Redis", zap.String("path", path), zap.String("username", username))
-				return true, nil
+				if defaultVal == api.NewProxyKey {
+					return true, nil
+				} else {
+					return false, nil
+				}
 			}
 			m.logger.Error("", zap.Error(err))
 			return false, err
@@ -108,19 +170,29 @@ func (m *migrator) IsPathMigrated(ctx context.Context, path, username string) (b
 	// the path does not start with /home, so we compare it agains all the path prefixes stored on Redis.
 	prefix := m.getMigrationPrefix(ctx, path)
 	if prefix == "" {
-		// redirect back to old server for paths we don't know about to be safe
+		// apply the i do not know rule for paths we do not know about
 		err := errors.New("prefix is empty")
 		m.logger.Error("", zap.Error(err), zap.String("path", path))
-		return false, nil
+		if iDoNotKnowVal == api.IDoNotKnowNewProxyKey {
+			return true, nil
+		} else if iDoNotKnowVal == api.IDoNotKnowOldProxyKey {
+			return false, nil
+		} else {
+			return false, errors.New("the iDoNotKnowWhatDo key is set to panic")
+		}
 	}
 
 	val, err := m.client.Get(prefix).Result()
 	if err != nil {
 		// prefix is not in the database, so it is a new path/user
-		// and should be forwarded to the new instance.
+		// apply default rule
 		if err == redis.Nil {
 			m.logger.Debug("path prefix not found in Redis", zap.String("path", path), zap.String("prefix", prefix), zap.String("username", username))
-			return true, nil
+			if defaultVal == api.NewProxyKey {
+				return true, nil
+			} else {
+				return false, nil
+			}
 		}
 		m.logger.Error("", zap.Error(err))
 		return false, err
