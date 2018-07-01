@@ -27,7 +27,7 @@
 
 [[constraint]]
   name = "github.com/cernbox/cboxredirectd"
-  version = "master"
+  version = "1.0.6"
 
 [[constraint]]
   name = "github.com/cernbox/gohub"
