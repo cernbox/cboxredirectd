@@ -19,6 +19,7 @@ The value of the key can only be *migrated* or *not-migrated*, any other value w
 
 
 ## Redis commands
+```
 set default-non-dav-request old-proxy
 set default-generic-or-unauthenticated-dav-request old-proxy
 set default-user-not-found old-proxy
@@ -27,6 +28,7 @@ set default-project-not-found old-proxy
 set /eos/user/g/gonzalhu not-migrated
 set /eos/user/g/gonzalhu migrated
 set /eos/user/g/gonzalhu migrating
+```
 
 
 
