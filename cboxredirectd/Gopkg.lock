@@ -17,8 +17,8 @@
     "goconfig",
     "gologger"
   ]
-  revision = "7c70591f4c29d71b0a2a0e65f410517b1e94edd5"
-  version = "v1.0.1"
+  revision = "765781472f9c0777e0e43556ecf972e36bc1b99a"
+  version = "v1.0.2"
 
 [[projects]]
   name = "github.com/fsnotify/fsnotify"
@@ -162,6 +162,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "6251bc55bf02764a74f033e1a7aeb0b2efeaf77557b383861cc9c15b0773ed32"
+  inputs-digest = "6d85bb4dfa9881deede1231a987098696ee7fac0d860b9450a8477eff945c713"
   solver-name = "gps-cdcl"
   solver-version = 1
