@@ -10,6 +10,7 @@ WorkingDirectory=/var/log/cboxredirectd
 ExecStart=/usr/local/bin/cboxredirectd
 StandardOutput=null
 StandardError=syslog
+LimitNOFILE=49152
 
 [Install]
 WantedBy=multi-user.target
