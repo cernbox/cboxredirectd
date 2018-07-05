@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.8
+Version: 1.0.10
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Thu Jul 05 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.10
+* Mon Jul 02 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.9
 * Mon Jul 02 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.8
 * Sun Jul 01 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.7
 * Mon Jun 28 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.6
