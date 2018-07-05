@@ -45,6 +45,7 @@ func main() {
 	gc.Add("proxy-max-idle-conns-per-host", 2, "if non-zero, controls the maximum idle (keep-alive) connections to keep per-host. If zero, default is used.")
 	gc.Add("proxy-idle-conn-timeout", 0, "the maximum amount of time an idle (keep-alive) connection will remain idle before closing itself. Zero means no limit.")
 	gc.Add("proxy-tls-insecure-skip-verify", false, "controls whether a client verifies the server's certificate chain and host name.")
+	gc.Add("proxy-disable-compression", false, "Disable transport compression (gzip)")
 
 	gc.BindFlags()
 	gc.ReadConfig()
@@ -80,6 +81,7 @@ func main() {
 		MaxIdleConnsPerHost: gc.GetInt("proxy-max-idle-conns-per-host"),
 		IdleConnTimeout:     gc.GetInt("proxy-idle-conn-timeout"),
 		InsecureSkipVerify:  gc.GetBool("proxy-tls-insecure-skip-verify"),
+		DisableCompression:  gc.GetBool("proxy-disable-compression"),
 	}
 	proxyHandler, err := proxy.New(proxyOpts)
 	if err != nil {

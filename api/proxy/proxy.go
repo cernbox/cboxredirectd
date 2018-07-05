@@ -26,6 +26,7 @@ type Options struct {
 	MaxIdleConns        int
 	MaxIdleConnsPerHost int
 	IdleConnTimeout     int
+	DisableCompression  bool
 }
 
 func (opts *Options) init() {
@@ -60,6 +61,7 @@ func New(opts *Options) (http.Handler, error) {
 		MaxIdleConns:        opts.MaxIdleConns,
 		MaxIdleConnsPerHost: opts.MaxIdleConnsPerHost,
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: opts.InsecureSkipVerify},
+		DisableCompression:  opts.DisableCompression,
 	}
 
 	oldProxy := httputil.NewSingleHostReverseProxy(oldURL)
