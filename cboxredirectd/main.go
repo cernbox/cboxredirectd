@@ -97,6 +97,11 @@ func main() {
 		Handler:      loggedRouter,
 	}
 
+	// redirect port 80 (http) to 443 (https)
+	if gc.GetBool("tls-enable") {
+		go http.ListenAndServe("0.0.0.0:80", redirect(logger))
+	}
+
 	logger.Info("server is listening", zap.String("tcp-address", gc.GetString("tcp-address")), zap.Bool("tls-enabled", gc.GetBool("tls-enable")), zap.String("tls-cert", gc.GetString("tls-cert")), zap.String("tls-key", gc.GetString("tls-key")))
 	var listenErr error
 	if gc.GetBool("tls-enable") {
@@ -110,4 +115,16 @@ func main() {
 	} else {
 		logger.Info("server exited without error")
 	}
+}
+
+func redirect(logger *zap.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// remove/add not default ports from req.Host
+		target := "https://" + req.Host + req.URL.Path
+		if len(req.URL.RawQuery) > 0 {
+			target += "?" + req.URL.RawQuery
+		}
+		logger.Info("redirect to: " + target)
+		http.Redirect(w, req, target, http.StatusTemporaryRedirect)
+	})
 }
