@@ -1,23 +1,30 @@
 package main
 
 import (
+	"crypto/tls"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/cernbox/cboxredirectd/api"
 	"github.com/cernbox/cboxredirectd/api/proxy"
 	"github.com/cernbox/cboxredirectd/api/redismigrator"
 	"github.com/cernbox/gohub/goconfig"
 	"github.com/cernbox/gohub/gologger"
 
+	"github.com/facebookgo/grace/gracehttp"
 	"go.uber.org/zap"
 )
 
-func main() {
+var gc *goconfig.GoConfig
+var logger *zap.Logger
 
-	gc := goconfig.New()
+func init() {
+	gc = goconfig.New()
 	gc.SetConfigName("cboxredirectd")
 	gc.AddConfigurationPaths("/etc/cboxredirectd")
-	gc.Add("tcp-address", "localhost:9999", "tcp addresss to listen for connections")
+	gc.Add("tcp-address", "localhost:9998", "tcp addresss to listen for connections and redirect to https on tcp-adress. Only used when tls-enable is true.")
+	gc.Add("tcp-address-redirect", "localhost:80", "tcp addresss to listen for connections")
 	gc.Add("app-log", "stderr", "file to log application information")
 	gc.Add("http-log", "stderr", "file to log http log information")
 	gc.Add("log-level", "info", "log level to use (debug, info, warn, error)")
@@ -50,8 +57,82 @@ func main() {
 	gc.BindFlags()
 	gc.ReadConfig()
 
-	logger := gologger.New(gc.GetString("log-level"), gc.GetString("app-log"))
+	logger = gologger.New(gc.GetString("log-level"), gc.GetString("app-log"))
 
+}
+
+func main() {
+
+	gracehttp.SetLogger(zap.NewStdLog(logger))
+	migrator := newMigrator()
+
+	proxyHandler := newProxyHandler(migrator)
+	router := http.NewServeMux()
+	router.Handle("/", proxyHandler)
+	routerWithLogging := gologger.GetLoggedHTTPHandler(gc.GetString("http-log"), router)
+
+	servers := []*http.Server{}
+	servers = append(servers, getMainServer(routerWithLogging))
+	if s := getRedirectServer(); s != nil {
+		servers = append(servers, s)
+	}
+
+	if err := gracehttp.Serve(servers...); err != nil {
+		logger.Error("", zap.Error(err))
+	}
+}
+
+func redirect(logger *zap.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		target := "https://" + req.Host + req.URL.Path
+		if len(req.URL.RawQuery) > 0 {
+			target += "?" + req.URL.RawQuery
+		}
+		logger.Info(fmt.Sprintf("redirection: '%s' => '%s'", req.URL.String(), target))
+		http.Redirect(w, req, target, http.StatusTemporaryRedirect)
+	})
+}
+
+func getMainServer(h http.Handler) *http.Server {
+	s := &http.Server{
+		Addr:         gc.GetString("tcp-address"),
+		ReadTimeout:  time.Second * time.Duration(gc.GetInt("http-read-timeout")),
+		WriteTimeout: time.Second * time.Duration(gc.GetInt("http-write-timeout")),
+		Handler:      h,
+	}
+	if gc.GetBool("tls-enable") {
+		cert, err := tls.LoadX509KeyPair(gc.GetString("tls-cert"), gc.GetString("tls-key"))
+		if err != nil {
+			logger.Error("", zap.Error(err))
+			panic(err.Error())
+		}
+
+		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+		s.TLSConfig = tlsCfg
+	}
+	logger.Info("server is listening", zap.String("tcp-address", gc.GetString("tcp-address")), zap.Bool("tls-enabled", gc.GetBool("tls-enable")), zap.String("tls-cert", gc.GetString("tls-cert")), zap.String("tls-key", gc.GetString("tls-key")))
+	return s
+}
+
+func getRedirectServer() *http.Server {
+	if !gc.GetBool("tls-enable") {
+		return nil
+	}
+
+	// redirect port 80 (http) to 443 (https)
+	httpOnlyRouter := redirect(logger)
+	loggedRouter := gologger.GetLoggedHTTPHandler(gc.GetString("http-log"), httpOnlyRouter)
+	logger.Info("server is listening for redirects", zap.String("tcp-address-redirect", gc.GetString("tcp-address-redirect")))
+	s := &http.Server{
+		Addr:         gc.GetString("tcp-address-redirect"),
+		ReadTimeout:  time.Second * time.Duration(gc.GetInt("http-read-timeout")),
+		WriteTimeout: time.Second * time.Duration(gc.GetInt("http-write-timeout")),
+		Handler:      loggedRouter,
+	}
+	return s
+}
+
+func newMigrator() api.Migrator {
 	migratorOpts := &redismigrator.Options{
 		Address:            gc.GetString("redis-tcp-address"),
 		DialTimeout:        gc.GetInt("redis-dial-timeout"),
@@ -70,7 +151,10 @@ func main() {
 		logger.Error("", zap.Error(err))
 		panic(err)
 	}
+	return migrator
+}
 
+func newProxyHandler(migrator api.Migrator) http.Handler {
 	proxyOpts := &proxy.Options{
 		Logger:              logger,
 		Migrator:            migrator,
@@ -87,46 +171,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	router := http.NewServeMux()
-	router.Handle("/", proxyHandler)
-	loggedRouter := gologger.GetLoggedHTTPHandler(gc.GetString("http-log"), router)
-
-	s := http.Server{
-		Addr:         gc.GetString("tcp-address"),
-		ReadTimeout:  time.Second * time.Duration(gc.GetInt("http-read-timeout")),
-		WriteTimeout: time.Second * time.Duration(gc.GetInt("http-write-timeout")),
-		Handler:      loggedRouter,
-	}
-
-	// redirect port 80 (http) to 443 (https)
-	if gc.GetBool("tls-enable") {
-		go http.ListenAndServe("0.0.0.0:80", redirect(logger))
-	}
-
-	logger.Info("server is listening", zap.String("tcp-address", gc.GetString("tcp-address")), zap.Bool("tls-enabled", gc.GetBool("tls-enable")), zap.String("tls-cert", gc.GetString("tls-cert")), zap.String("tls-key", gc.GetString("tls-key")))
-	var listenErr error
-	if gc.GetBool("tls-enable") {
-		listenErr = s.ListenAndServeTLS(gc.GetString("tls-cert"), gc.GetString("tls-key"))
-	} else {
-		listenErr = s.ListenAndServe()
-	}
-
-	if listenErr != nil {
-		logger.Error("server exited with error", zap.Error(listenErr))
-	} else {
-		logger.Info("server exited without error")
-	}
-}
-
-func redirect(logger *zap.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// remove/add not default ports from req.Host
-		target := "https://" + req.Host + req.URL.Path
-		if len(req.URL.RawQuery) > 0 {
-			target += "?" + req.URL.RawQuery
-		}
-		logger.Info("redirect to: " + target)
-		http.Redirect(w, req, target, http.StatusTemporaryRedirect)
-	})
+	return proxyHandler
 }
