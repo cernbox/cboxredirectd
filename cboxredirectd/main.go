@@ -67,12 +67,10 @@ func main() {
 	migrator := newMigrator()
 
 	proxyHandler := newProxyHandler(migrator)
-	router := http.NewServeMux()
-	router.Handle("/", proxyHandler)
-	routerWithLogging := gologger.GetLoggedHTTPHandler(gc.GetString("http-log"), router)
+	loggedHandler := gologger.GetLoggedHTTPHandler(gc.GetString("http-log"), proxyHandler)
 
 	servers := []*http.Server{}
-	servers = append(servers, getMainServer(routerWithLogging))
+	servers = append(servers, getMainServer(loggedHandler))
 	if s := getRedirectServer(); s != nil {
 		servers = append(servers, s)
 	}
