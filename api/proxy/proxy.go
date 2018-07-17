@@ -44,14 +44,44 @@ type proxy struct {
 	insecureSkipVerify bool
 }
 
-// See https://github.com/golang/go/issues/26414
-func director(req *http.Request) {
-	// apply hack only to GET requests, as we have only seen these type of reqs from apt-get.
-	if req.Method == "GET" {
-		quietReq := req.WithContext(context.Background())
-		*req = *quietReq
-	}
+func singleJoiningSlash(a, b string) string {
+  	aslash := strings.HasSuffix(a, "/")
+  	bslash := strings.HasPrefix(b, "/")
+  	switch {
+  	case aslash && bslash:
+  		return a + b[1:]
+  	case !aslash && !bslash:
+  		return a + "/" + b
+  	}
+  	return a + b
 }
+
+func newSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
+  	targetQuery := target.RawQuery
+
+  	director := func(req *http.Request) {
+  		req.URL.Scheme = target.Scheme
+  		req.URL.Host = target.Host
+  		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
+  		if targetQuery == "" || req.URL.RawQuery == "" {
+  			req.URL.RawQuery = targetQuery + req.URL.RawQuery
+  		} else {
+  			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
+  		}
+  		if _, ok := req.Header["User-Agent"]; !ok {
+  			// explicitly disable User-Agent so it's not set to default value
+  			req.Header.Set("User-Agent", "")
+  		}
+
+		// See https://github.com/golang/go/issues/26414
+		// apply hack only to GET requests, as we have only seen these type of reqs from apt-get.
+		if req.Method == "GET" {
+			quietReq := req.WithContext(context.Background())
+                	*req = *quietReq
+        	}
+  	}
+  	return &httputil.ReverseProxy{Director: director}
+ }
 
 func New(opts *Options) (http.Handler, error) {
 	opts.init()
@@ -73,11 +103,8 @@ func New(opts *Options) (http.Handler, error) {
 		DisableCompression:  opts.DisableCompression,
 	}
 
-	oldProxy := httputil.NewSingleHostReverseProxy(oldURL)
-	newProxy := httputil.NewSingleHostReverseProxy(newURL)
-
-	oldProxy.Director = director
-	newProxy.Director = director
+	oldProxy := newSingleHostReverseProxy(oldURL)
+	newProxy := newSingleHostReverseProxy(newURL)
 
 	oldProxy.Transport = t
 	newProxy.Transport = t
