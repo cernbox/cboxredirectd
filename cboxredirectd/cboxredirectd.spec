@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.12
+Version: 1.0.14
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,10 @@ rm -rf %buildroot/
 
 
 %changelog
+* Tue Jul 17 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.14
+- Disable context cancellation for GET requests
+* Tue Jul 17 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.13
+- Do not use the http mux for the main http handler
 * Mon Jul 16 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.12
 - Use v1.0.3 of gologger
 * Fri Jul 06 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.11
