@@ -44,6 +44,15 @@ type proxy struct {
 	insecureSkipVerify bool
 }
 
+// See https://github.com/golang/go/issues/26414
+func director(req *http.Request) {
+	// apply hack only to GET requests, as we have only seen these type of reqs from apt-get.
+	if req.Method == "GET" {
+		quietReq := req.WithContext(context.Background())
+		*req = *quietReq
+	}
+}
+
 func New(opts *Options) (http.Handler, error) {
 	opts.init()
 	oldURL, err := url.Parse(opts.OldProxyURL)
@@ -66,6 +75,9 @@ func New(opts *Options) (http.Handler, error) {
 
 	oldProxy := httputil.NewSingleHostReverseProxy(oldURL)
 	newProxy := httputil.NewSingleHostReverseProxy(newURL)
+
+	oldProxy.Director = director
+	newProxy.Director = director
 
 	oldProxy.Transport = t
 	newProxy.Transport = t
