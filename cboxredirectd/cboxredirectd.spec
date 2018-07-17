@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.14
+Version: 1.0.15
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Tue Jul 17 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.15
+- Fix director function for httproxy
 * Tue Jul 17 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.14
 - Disable context cancellation for GET requests
 * Tue Jul 17 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.13
