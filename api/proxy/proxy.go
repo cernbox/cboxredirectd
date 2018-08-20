@@ -45,43 +45,43 @@ type proxy struct {
 }
 
 func singleJoiningSlash(a, b string) string {
-  	aslash := strings.HasSuffix(a, "/")
-  	bslash := strings.HasPrefix(b, "/")
-  	switch {
-  	case aslash && bslash:
-  		return a + b[1:]
-  	case !aslash && !bslash:
-  		return a + "/" + b
-  	}
-  	return a + b
+	aslash := strings.HasSuffix(a, "/")
+	bslash := strings.HasPrefix(b, "/")
+	switch {
+	case aslash && bslash:
+		return a + b[1:]
+	case !aslash && !bslash:
+		return a + "/" + b
+	}
+	return a + b
 }
 
 func newSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
-  	targetQuery := target.RawQuery
+	targetQuery := target.RawQuery
 
-  	director := func(req *http.Request) {
-  		req.URL.Scheme = target.Scheme
-  		req.URL.Host = target.Host
-  		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
-  		if targetQuery == "" || req.URL.RawQuery == "" {
-  			req.URL.RawQuery = targetQuery + req.URL.RawQuery
-  		} else {
-  			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
-  		}
-  		if _, ok := req.Header["User-Agent"]; !ok {
-  			// explicitly disable User-Agent so it's not set to default value
-  			req.Header.Set("User-Agent", "")
-  		}
+	director := func(req *http.Request) {
+		req.URL.Scheme = target.Scheme
+		req.URL.Host = target.Host
+		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
+		if targetQuery == "" || req.URL.RawQuery == "" {
+			req.URL.RawQuery = targetQuery + req.URL.RawQuery
+		} else {
+			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
+		}
+		if _, ok := req.Header["User-Agent"]; !ok {
+			// explicitly disable User-Agent so it's not set to default value
+			req.Header.Set("User-Agent", "")
+		}
 
 		// See https://github.com/golang/go/issues/26414
 		// apply hack only to GET requests, as we have only seen these type of reqs from apt-get.
 		if req.Method == "GET" {
 			quietReq := req.WithContext(context.Background())
-                	*req = *quietReq
-        	}
-  	}
-  	return &httputil.ReverseProxy{Director: director}
- }
+			*req = *quietReq
+		}
+	}
+	return &httputil.ReverseProxy{Director: director}
+}
 
 func New(opts *Options) (http.Handler, error) {
 	opts.init()
@@ -129,22 +129,25 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defaultProjectNotFound := p.migrator.GetDefaultProjectNotFound(ctx)
 	defaultNonDAVRequest := p.migrator.GetDefaultNonDAVRequest(ctx)
 
-	p.logger.Info("migration check", zap.String("non-normalized-path", r.URL.Path), zap.String("normalized-path", normalizedPath), zap.String("username", username), zap.String(api.REDIS_KEY_DEFAULT_GENERIC_OR_UNAUTHENTICATED_DAV_REQUEST, string(defaultGenericOrUnauthenticatedDAVRequest)), zap.String(api.REDIS_KEY_DEFAULT_USER_NOT_FOUND, string(defaultUserNotFound)), zap.String(api.REDIS_KEY_DEFAULT_PROJECT_NOT_FOUND, string(defaultProjectNotFound)))
+	p.logger.Info("migration check", zap.String("username", username), zap.String("non-normalized-path", r.URL.Path), zap.String("normalized-path", normalizedPath), zap.String("username", username), zap.String(api.REDIS_KEY_DEFAULT_GENERIC_OR_UNAUTHENTICATED_DAV_REQUEST, string(defaultGenericOrUnauthenticatedDAVRequest)), zap.String(api.REDIS_KEY_DEFAULT_USER_NOT_FOUND, string(defaultUserNotFound)), zap.String(api.REDIS_KEY_DEFAULT_PROJECT_NOT_FOUND, string(defaultProjectNotFound)))
 
 	// prefix is either /cernbox/desktop, /cernbox/mobile or /cernbox/webdav
 	if ok, prefix := p.pathInEOSDAVRealm(ctx, username, normalizedPath); ok {
 		// remove the prefix from the normalizedPath to have a clean EOS path
 		// eosPath is be "", "/", "/home", "/eos", "/home/docs", "/eos/user" or something weird like "mambo jampo
 		eosPath := path.Clean(strings.TrimPrefix(normalizedPath, prefix))
-		p.logger.Info("obtained eosPath", zap.String("eosPath", eosPath))
+		p.logger.Info("obtained eospath", zap.String("username", username), zap.String("eospath", eosPath), zap.String("webdavprefix", prefix))
 
 		var redisKey string
 		var redisKeyType api.RedisKeyType
-		if strings.HasPrefix(eosPath, "/home") {
-			p.logger.Info("eosPath starts with /home prefix")
+		// requests coming from the mobile clients treat "home" as "/", that is why we have
+		// the magic CBOX_MAPPING headers in the gateways, we treat requests coming from mobile as always
+		// from home.
+		if strings.HasPrefix(eosPath, "/home") || prefix == "/cernbox/mobile/remote.php/webdav" {
+			p.logger.Info("eosPath starts with /home prefix or is a mobile path", zap.String("username", username), zap.String("eospath", eosPath), zap.String("webdavprefix", prefix))
 			// we need a valid username to know where to send the guy
 			if username == "" {
-				p.logger.Info("username is empty, we apply default for generic or unauthenticated dav requests", zap.String("default", string(defaultGenericOrUnauthenticatedDAVRequest)))
+				p.logger.Info("username is empty, we forward to default for generic or unauthenticated dav requests", zap.String("username", username), zap.String("default", string(defaultGenericOrUnauthenticatedDAVRequest)))
 				// apply default logic for non authenticated users
 				p.applyDefaultForGenericOrUnauthenticatedDAVRequest(defaultGenericOrUnauthenticatedDAVRequest, w, r)
 				return
@@ -152,16 +155,16 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			// username is set, we know the user, so we know also his homedirectory
 			homeDirectory := fmt.Sprintf("/eos/user/%s/%s", string(username[0]), username)
-			p.logger.Info("username is set, we create its home directory key", zap.String("homeDirectory", homeDirectory))
+			p.logger.Info("username is set, we create its home directory key", zap.String("username", username), zap.String("homeDirectory", homeDirectory), zap.String("username", username))
 			redisKey = homeDirectory
 			redisKeyType = api.RedisKeyUser
 
 		} else {
-			p.logger.Info("eosPath does not start with /home prefix")
+			p.logger.Info("eospath does not start with /home prefix", zap.String("username", username), zap.String("eospath", eosPath), zap.String("webdavprefix", prefix))
 			// the path is not /home, so we will try to infer the redis key from the path
 			key, keyType, found := p.inferRedisKey(ctx, eosPath)
 			if !found {
-				p.logger.Info("the redis key could not be extracted from the path, we apply the default for generic webdav", zap.String("eosPath", eosPath))
+				p.logger.Info("the redis key could not be extracted from the path, we forward to the default for generic or unauthenticated dav requests", zap.String("username", username), zap.String("eospath", eosPath), zap.String("webdavprefix", prefix), zap.String("username", username))
 				p.applyDefaultForGenericOrUnauthenticatedDAVRequest(defaultGenericOrUnauthenticatedDAVRequest, w, r)
 				return
 			}
@@ -171,16 +174,18 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			redisKeyType = keyType
 		}
 
-		p.logger.Info("redis key extracted", zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)))
+		p.logger.Info("redis key extracted", zap.String("username", username), zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)))
 		// ask redis for this key
 		isMigrated, found := p.migrator.IsKeyMigrated(ctx, redisKey)
 		if !found {
-			p.logger.Info("redis key not found", zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)))
+			p.logger.Info("redis key not found, forward for default key not found", zap.String("username", username), zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)))
 			// this entry has not been found in the redis database, so we apply the defaults based on the redisKeyType
 			if redisKeyType == api.RedisKeyUser {
+				p.logger.Info("user not found, forwards to default for user not found", zap.String("username", username), zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)), zap.String("default", string(defaultUserNotFound)))
 				p.applyDefaultForUserNotFound(defaultUserNotFound, w, r)
 				return
 			} else {
+				p.logger.Info("project not found, forwards to default for project not found", zap.String("username", username), zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)), zap.String("default", string(defaultProjectNotFound)))
 				p.applyDefaultForProjectNotFound(defaultProjectNotFound, w, r)
 				return
 			}
@@ -189,11 +194,11 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// the key is found and we redirect accordingly to the value of the key.
 		if isMigrated {
-			p.logger.Info("key is migrated", zap.String("proxy", "new-proxy"))
+			p.logger.Info("key is migrated, forward to new-proxy", zap.String("username", username), zap.String("key", redisKey), zap.String("proxy", "new-proxy"))
 			p.newProxy.ServeHTTP(w, r)
 			return
 		} else {
-			p.logger.Info("key is not migrated", zap.String("proxy", "old-proxy"))
+			p.logger.Info("key is not migrated, forward to old-proxy", zap.String("username", username), zap.String("key", redisKey), zap.String("proxy", "old-proxy"))
 			p.oldProxy.ServeHTTP(w, r)
 			return
 		}
@@ -204,7 +209,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.paranoiaDAVcheck(normalizedPath, w, r)
 
 	// the request is a non webdav request so we apply the default for non webdav requests
-	p.logger.Info("request is non webdav, apply default logic")
+	p.logger.Info("request is non webdav, forward to the default for non dav requests", zap.String("username", username))
 	p.applyDefaultForNonDAVRequest(defaultNonDAVRequest, w, r)
 	return
 }
