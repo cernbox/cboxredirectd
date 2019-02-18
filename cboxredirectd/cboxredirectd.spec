@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.16
+Version: 1.0.17
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Mon Feb 19 2019 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.17
+- Add restart=always to systemd
 * Mon Aug 20 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.16
 - Fix webdav path redirection rules for mobile endpoint
 * Tue Jul 17 2018 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.15
