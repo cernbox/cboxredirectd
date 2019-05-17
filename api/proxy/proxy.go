@@ -19,6 +19,8 @@ import (
 type Options struct {
 	OldProxyURL         string
 	NewProxyURL         string
+	WebProxyURL         string
+	WebCanaryProxyURL   string
 	Logger              *zap.Logger
 	Migrator            api.Migrator
 	InsecureSkipVerify  bool
@@ -39,6 +41,8 @@ func (opts *Options) init() {
 type proxy struct {
 	oldProxy           *httputil.ReverseProxy
 	newProxy           *httputil.ReverseProxy
+	webProxy           *httputil.ReverseProxy
+	webCanaryProxy     *httputil.ReverseProxy
 	migrator           api.Migrator
 	logger             *zap.Logger
 	insecureSkipVerify bool
@@ -83,6 +87,7 @@ func newSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{Director: director}
 }
 
+// New creates a new proxy handlers.
 func New(opts *Options) (http.Handler, error) {
 	opts.init()
 	oldURL, err := url.Parse(opts.OldProxyURL)
@@ -90,6 +95,14 @@ func New(opts *Options) (http.Handler, error) {
 		return nil, err
 	}
 	newURL, err := url.Parse(opts.NewProxyURL)
+	if err != nil {
+		return nil, err
+	}
+	webURL, err := url.Parse(opts.WebProxyURL)
+	if err != nil {
+		return nil, err
+	}
+	webCanaryURL, err := url.Parse(opts.WebCanaryProxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -105,13 +118,19 @@ func New(opts *Options) (http.Handler, error) {
 
 	oldProxy := newSingleHostReverseProxy(oldURL)
 	newProxy := newSingleHostReverseProxy(newURL)
+	webProxy := newSingleHostReverseProxy(webURL)
+	webCanaryProxy := newSingleHostReverseProxy(webCanaryURL)
 
 	oldProxy.Transport = t
 	newProxy.Transport = t
+	webProxy.Transport = t
+	webCanaryProxy.Transport = t
 
 	return &proxy{
 		oldProxy:           oldProxy,
 		newProxy:           newProxy,
+		webProxy:           webProxy,
+		webCanaryProxy:     webCanaryProxy,
 		migrator:           opts.Migrator,
 		logger:             opts.Logger,
 		insecureSkipVerify: opts.InsecureSkipVerify,
@@ -208,10 +227,58 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// check if there are any other webdav paths that we have omited, abort in case we find one
 	p.paranoiaDAVcheck(normalizedPath, w, r)
 
+	// check if request need to be handled by webserver.
+	if p.isWebRequest(normalizedPath, r) {
+		// check if the user is a tester and we send her to the canary or prod
+		// deployments.
+		c, err := r.Cookie("web-canary")
+		if err != nil { // no cookie
+			p.logger.Info("path is a known web path, forward to web canary proxy", zap.String("path", normalizedPath))
+			p.webProxy.ServeHTTP(w, r)
+			return
+		}
+		// cookie is set so we send to canary web.
+		p.logger.Info("path is a known web path, forward to web canary proxy", zap.String("path", normalizedPath), zap.Int("canary-cookie-expires-seconds", c.Expires.Second()))
+		p.webCanaryProxy.ServeHTTP(w, r)
+		return
+	}
+
 	// the request is a non webdav request so we apply the default for non webdav requests
-	p.logger.Info("request is non webdav, forward to the default for non dav requests", zap.String("username", username))
+	p.logger.Info("request is non webdav and non web, forward to the default for non dav requests", zap.String("username", username), zap.String("path", normalizedPath))
 	p.applyDefaultForNonDAVRequest(defaultNonDAVRequest, w, r)
 	return
+}
+
+var knownWebPaths = []string{
+	"/cron.php",
+	"/settings",
+	"/ocs",
+	"/version.php",
+	"/status.php",
+	"/index.php",
+	"/remote.php",
+	"/public.php",
+	"/apps",
+	"/core",
+	"/favicon.ico",
+	"/shibboleth-sp",
+	"/Shibboleth.sso",
+	"/robots.txt",
+	"/swanapi",
+}
+
+func (p *proxy) isWebRequest(path string, r *http.Request) bool {
+	// if path is root, is for the web like cernbox.cern.ch
+	if path == "/" {
+		return true
+	}
+
+	for _, prefix := range knownWebPaths {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // pathInEOSDAVRealm checks for known webdav paths
