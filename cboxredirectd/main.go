@@ -107,7 +107,7 @@ func getMainServer(h http.Handler) *http.Server {
 			panic(err.Error())
 		}
 
-		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS10}
 		s.TLSConfig = tlsCfg
 	}
 	logger.Info("server is listening", zap.String("tcp-address", gc.GetString("tcp-address")), zap.Bool("tls-enabled", gc.GetBool("tls-enable")), zap.String("tls-cert", gc.GetString("tls-cert")), zap.String("tls-key", gc.GetString("tls-key")))
