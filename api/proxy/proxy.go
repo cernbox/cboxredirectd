@@ -148,7 +148,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defaultProjectNotFound := p.migrator.GetDefaultProjectNotFound(ctx)
 	defaultNonDAVRequest := p.migrator.GetDefaultNonDAVRequest(ctx)
 
-	p.logger.Info("migration check", zap.String("username", username), zap.String("non-normalized-path", r.URL.Path), zap.String("normalized-path", normalizedPath), zap.String("username", username), zap.String(api.REDIS_KEY_DEFAULT_GENERIC_OR_UNAUTHENTICATED_DAV_REQUEST, string(defaultGenericOrUnauthenticatedDAVRequest)), zap.String(api.REDIS_KEY_DEFAULT_USER_NOT_FOUND, string(defaultUserNotFound)), zap.String(api.REDIS_KEY_DEFAULT_PROJECT_NOT_FOUND, string(defaultProjectNotFound)))
+	p.logger.Info("migration check", zap.String("username", username), zap.String("non-normalized-path", r.URL.Path), zap.String("normalized-path", normalizedPath), zap.String(api.REDIS_KEY_DEFAULT_GENERIC_OR_UNAUTHENTICATED_DAV_REQUEST, string(defaultGenericOrUnauthenticatedDAVRequest)), zap.String(api.REDIS_KEY_DEFAULT_USER_NOT_FOUND, string(defaultUserNotFound)), zap.String(api.REDIS_KEY_DEFAULT_PROJECT_NOT_FOUND, string(defaultProjectNotFound)))
 
 	// prefix is either /cernbox/desktop, /cernbox/mobile or /cernbox/webdav
 	if ok, prefix := p.pathInEOSDAVRealm(ctx, username, normalizedPath); ok {
@@ -233,7 +233,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// deployments.
 		c, err := r.Cookie("web-canary")
 		if err != nil { // no cookie
-			p.logger.Info("path is a known web path, forward to web canary proxy", zap.String("path", normalizedPath))
+			p.logger.Info("path is a known web path, forward to normal web proxy", zap.String("path", normalizedPath))
 			p.webProxy.ServeHTTP(w, r)
 			return
 		}
