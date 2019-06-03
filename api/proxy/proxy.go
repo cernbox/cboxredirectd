@@ -231,14 +231,14 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.isWebRequest(normalizedPath, r) {
 		// check if the user is a tester and we send her to the canary or prod
 		// deployments.
-		c, err := r.Cookie("web-canary")
+		c, err := r.Cookie("web_canary")
 		if err != nil { // no cookie
 			p.logger.Info("path is a known web path, forward to normal web proxy", zap.String("path", normalizedPath))
 			p.webProxy.ServeHTTP(w, r)
 			return
 		}
 		// cookie is set so we send to canary web.
-		p.logger.Info("path is a known web path, forward to web canary proxy", zap.String("path", normalizedPath), zap.Int("canary-cookie-expires-seconds", c.Expires.Second()))
+		p.logger.Info("path is a known web path, forward to web canary proxy", zap.String("path", normalizedPath), zap.Int("canary-cookie-max-age", c.MaxAge), zap.String("cookie", fmt.Sprintf("%+v", c)))
 		p.webCanaryProxy.ServeHTTP(w, r)
 		return
 	}
