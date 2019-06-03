@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.18
+Version: 1.0.19
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Mon Jun 03 2019 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.19
+- Minor fixes for canary deployment.
 * Tue May 21 2019 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.18
 - Disable SSL support in favour of TLS.
 - Forward web traffic directly to the web servers instead the EOS NGINX gateways
