@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.19
+Version: 1.0.20
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Tue Jun 04 2019 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.20
+- Add /byoa to supported web paths
 * Mon Jun 03 2019 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.19
 - Minor fixes for canary deployment.
 * Tue May 21 2019 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.18
