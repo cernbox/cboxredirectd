@@ -265,6 +265,7 @@ var knownWebPaths = []string{
 	"/Shibboleth.sso",
 	"/robots.txt",
 	"/swanapi",
+	"/byoa",
 }
 
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {
