@@ -30,5 +30,7 @@ set /eos/user/g/gonzalhu migrated
 set /eos/user/g/gonzalhu migrating
 ```
 
+## Graceful restart
 
+` kill -USR2 PID`
 
