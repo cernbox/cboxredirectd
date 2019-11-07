@@ -8,6 +8,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +31,7 @@ type Options struct {
 	MaxIdleConnsPerHost int
 	IdleConnTimeout     int
 	DisableCompression  bool
+	MinimumSyncClient   []int
 }
 
 func (opts *Options) init() {
@@ -46,6 +49,8 @@ type proxy struct {
 	migrator           api.Migrator
 	logger             *zap.Logger
 	insecureSkipVerify bool
+	MinimumSyncClient  []int
+	VersionRegex       *regexp.Regexp
 }
 
 func singleJoiningSlash(a, b string) string {
@@ -126,6 +131,12 @@ func New(opts *Options) (http.Handler, error) {
 	webProxy.Transport = t
 	webCanaryProxy.Transport = t
 
+	versionRegex, err := regexp.Compile(`mirall/(\d+)\.(\d+).?(\d+)?`)
+	if err != nil {
+		opts.Logger.Error("", zap.Error(err))
+		panic(err)
+	}
+
 	return &proxy{
 		oldProxy:           oldProxy,
 		newProxy:           newProxy,
@@ -134,6 +145,8 @@ func New(opts *Options) (http.Handler, error) {
 		migrator:           opts.Migrator,
 		logger:             opts.Logger,
 		insecureSkipVerify: opts.InsecureSkipVerify,
+		MinimumSyncClient:  opts.MinimumSyncClient,
+		VersionRegex:       versionRegex,
 	}, nil
 
 }
@@ -152,6 +165,15 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// prefix is either /cernbox/desktop, /cernbox/mobile or /cernbox/webdav
 	if ok, prefix := p.pathInEOSDAVRealm(ctx, username, normalizedPath); ok {
+
+		userAgent := r.Header.Get("User-Agent")
+
+		if !p.validClient(userAgent) {
+			w.WriteHeader(http.StatusForbidden)
+			p.logger.Info("rejected client", zap.String("username", username), zap.String("userAgent", userAgent))
+			return
+		}
+
 		// remove the prefix from the normalizedPath to have a clean EOS path
 		// eosPath is be "", "/", "/home", "/eos", "/home/docs", "/eos/user" or something weird like "mambo jampo
 		eosPath := path.Clean(strings.TrimPrefix(normalizedPath, prefix))
@@ -404,4 +426,41 @@ func (p *proxy) applyDefaultForNonDAVRequest(val api.DefaultNonDAVRequest, w htt
 		p.newProxy.ServeHTTP(w, r)
 		return
 	}
+}
+
+func (p *proxy) validClient(userAgent string) bool {
+
+	match := p.VersionRegex.FindStringSubmatch(userAgent)
+	// match will contain a slice with the full match (if it matches the regex)
+	// plus all the sub matches (the integers that correspond to the 'major', 'minor', 'build')
+
+	if len(match) > 0 { // a match was found
+		for i, _ := range p.VersionRegex.SubexpNames() {
+
+			if i == 0 { // skip the first entry, as this is the full match
+				continue
+			}
+
+			var value int
+			if match[i] == "" {
+				// In case the 'build' version was not specified, we set it at 0
+				value = 0
+			} else {
+				value, _ = strconv.Atoi(match[i])
+			}
+
+			if value > p.MinimumSyncClient[i-1] {
+				// the current value is higher than what we expected so we can already return true
+				break
+
+			} else if value < p.MinimumSyncClient[i-1] {
+				// the current value is lower than what we expected so we can already return false
+				return false
+			}
+
+			// the current value is equal so we need to check the next in the slice...
+
+		}
+	} // else, a match was not found but we allow clients that do not specify a version
+	return true
 }
