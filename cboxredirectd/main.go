@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cernbox/cboxredirectd/api"
@@ -55,6 +57,8 @@ func init() {
 	gc.Add("proxy-idle-conn-timeout", 0, "the maximum amount of time an idle (keep-alive) connection will remain idle before closing itself. Zero means no limit.")
 	gc.Add("proxy-tls-insecure-skip-verify", false, "controls whether a client verifies the server's certificate chain and host name.")
 	gc.Add("proxy-disable-compression", false, "Disable transport compression (gzip)")
+
+	gc.Add("minimum-sync-client", "0.0.0", "Minimum version of sync client that will be supported")
 
 	gc.BindFlags()
 	gc.ReadConfig()
@@ -155,6 +159,19 @@ func newMigrator() api.Migrator {
 }
 
 func newProxyHandler(migrator api.Migrator) http.Handler {
+
+	minimumSyncClientString := strings.Split(gc.GetString("minimum-sync-client"), ".")
+	minimumSyncClient := []int{}
+
+	for _, s := range minimumSyncClientString {
+		i, err := strconv.Atoi(s)
+		if err != nil {
+			logger.Error("", zap.Error(err))
+			panic(err)
+		}
+		minimumSyncClient = append(minimumSyncClient, i)
+	}
+
 	proxyOpts := &proxy.Options{
 		Logger:              logger,
 		Migrator:            migrator,
@@ -168,6 +185,7 @@ func newProxyHandler(migrator api.Migrator) http.Handler {
 		IdleConnTimeout:     gc.GetInt("proxy-idle-conn-timeout"),
 		InsecureSkipVerify:  gc.GetBool("proxy-tls-insecure-skip-verify"),
 		DisableCompression:  gc.GetBool("proxy-disable-compression"),
+		MinimumSyncClient:   minimumSyncClient,
 	}
 	proxyHandler, err := proxy.New(proxyOpts)
 	if err != nil {
