@@ -253,9 +253,16 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.isWebRequest(normalizedPath, r) {
 		// check if the user is a tester and we send her to the canary or prod
 		// deployments.
+
 		c, err := r.Cookie("web_canary")
 		if err != nil { // no cookie
 			p.logger.Info("path is a known web path, forward to normal web proxy", zap.String("path", normalizedPath))
+
+			if strings.HasPrefix(normalizedPath, "/cernbox/mobile") {
+				p.logger.Info("request is from a new mobile client", zap.String("path", normalizedPath))
+				r.Header.Add("CBOXCLIENTMAPPING", "/cernbox/mobile")
+			}
+
 			p.webProxy.ServeHTTP(w, r)
 			return
 		}
@@ -289,6 +296,11 @@ var knownWebPaths = []string{
 	"/swanapi",
 	"/byoa",
 	"/cernbox/update",
+	"/cernbox/mobile/ocs/v1.php/apps/files_sharing/api",
+	"/cernbox/mobile/ocs/v2.php/apps/files_sharing/api",
+	"/cernbox/desktop/ocs/v1.php/apps/files_sharing/api",
+	"/cernbox/desktop/ocs/v2.php/apps/files_sharing/api",
+	"/cernbox/mobile/remote.php/dav/files",
 }
 
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {

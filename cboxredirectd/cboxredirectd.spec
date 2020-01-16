@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.22
+Version: 1.0.23
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,9 @@ rm -rf %buildroot/
 
 
 %changelog
+* Wed Nov 06 2019 Diogo Castro <diogo.castro@cern.ch> 1.0.23
+- Sharing endpoints for sync/mobile clients treated as web calls
+- Redirect mobile webdav calls to web
 * Wed Nov 06 2019 Diogo Castro <diogo.castro@cern.ch> 1.0.22
 - Add minimum sync client version supported
 * Tue Jul 25 2019 Diogo Castro <diogo.castro@cern.ch> 1.0.21
