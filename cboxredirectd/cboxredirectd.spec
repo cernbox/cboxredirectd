@@ -54,6 +54,9 @@ rm -rf %buildroot/
 
 
 %changelog
+* Thu Jan 24 2020 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.24
+- Forward /cernbox/mobile/remote.php/dav/uploads to web proxy
+- Forward /cernbox/mobile/index.php/apps/files/api to web proxy
 * Wed Nov 06 2019 Diogo Castro <diogo.castro@cern.ch> 1.0.23
 - Sharing endpoints for sync/mobile clients treated as web calls
 - Redirect mobile webdav calls to web
