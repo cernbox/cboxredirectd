@@ -301,6 +301,7 @@ var knownWebPaths = []string{
 	"/cernbox/desktop/ocs/v1.php/apps/files_sharing/api",
 	"/cernbox/desktop/ocs/v2.php/apps/files_sharing/api",
 	"/cernbox/mobile/remote.php/dav/files",
+	"/cernbox/mobile/remote.php/dav/uploads",
 }
 
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {
