@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.24
+Version: 1.0.25
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Tue Apr 14 2020 Diogo Castro <diogo.castro@cern.ch> 1.0.25
+- Lowercase usernames used in basic auth (to avoid EOS failed authentication)
 * Thu Jan 24 2020 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.24
 - Forward /cernbox/mobile/remote.php/dav/uploads to web proxy
 - Forward /cernbox/mobile/index.php/apps/files/api to web proxy

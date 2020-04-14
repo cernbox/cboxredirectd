@@ -153,13 +153,19 @@ func New(opts *Options) (http.Handler, error) {
 
 func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	username, _, _ := r.BasicAuth()
+	username, password, okBasicAuth := r.BasicAuth()
 	normalizedPath := path.Clean(r.URL.Path)
 
 	defaultGenericOrUnauthenticatedDAVRequest := p.migrator.GetDefaultGenericOrUnAuthenticatedDAVRequest(ctx)
 	defaultUserNotFound := p.migrator.GetDefaultUserNotFound(ctx)
 	defaultProjectNotFound := p.migrator.GetDefaultProjectNotFound(ctx)
 	defaultNonDAVRequest := p.migrator.GetDefaultNonDAVRequest(ctx)
+
+	// Make usernames lowercase to avoid unauthenticated requests from EOS
+	username = strings.ToLower(username)
+	if okBasicAuth {
+		r.SetBasicAuth(username, password)
+	}
 
 	p.logger.Info("migration check", zap.String("username", username), zap.String("non-normalized-path", r.URL.Path), zap.String("normalized-path", normalizedPath), zap.String(api.REDIS_KEY_DEFAULT_GENERIC_OR_UNAUTHENTICATED_DAV_REQUEST, string(defaultGenericOrUnauthenticatedDAVRequest)), zap.String(api.REDIS_KEY_DEFAULT_USER_NOT_FOUND, string(defaultUserNotFound)), zap.String(api.REDIS_KEY_DEFAULT_PROJECT_NOT_FOUND, string(defaultProjectNotFound)))
 
