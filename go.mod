@@ -3,7 +3,7 @@ module github.com/cernbox/cboxredirectd
 go 1.13
 
 require (
-	github.com/cernbox/gohub v1.0.4-0.20201014130004-ed6228d72228
+	github.com/cernbox/gohub v1.0.4-0.20201014142309-49ae56fa308e
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/facebookgo/ensure v0.0.0-20200202191622-63f1cf65ac4c // indirect
 	github.com/facebookgo/freeport v0.0.0-20150612182905-d4adf43b75b9 // indirect

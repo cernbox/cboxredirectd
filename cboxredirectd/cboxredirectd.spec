@@ -55,6 +55,7 @@ rm -rf %buildroot/
 
 %changelog
 * Wed Oct 14 2020 Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.27
+- Fix end of line
 - Bump deps to use combined apache logs for cboxredirectd_http.log
 * Tue Apr 14 2020 Diogo Castro <diogo.castro@cern.ch> 1.0.25
 - Lowercase usernames used in basic auth (to avoid EOS failed authentication)
