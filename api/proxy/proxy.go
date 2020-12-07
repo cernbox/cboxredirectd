@@ -23,6 +23,7 @@ type Options struct {
 	NewProxyURL         string
 	WebProxyURL         string
 	WebCanaryProxyURL   string
+	WebOCISProxyURL     string
 	Logger              *zap.Logger
 	Migrator            api.Migrator
 	InsecureSkipVerify  bool
@@ -46,6 +47,7 @@ type proxy struct {
 	newProxy           *httputil.ReverseProxy
 	webProxy           *httputil.ReverseProxy
 	webCanaryProxy     *httputil.ReverseProxy
+	webOCISProxy       *httputil.ReverseProxy
 	migrator           api.Migrator
 	logger             *zap.Logger
 	insecureSkipVerify bool
@@ -111,6 +113,10 @@ func New(opts *Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	webOCISURL, err := url.Parse(opts.WebOCISProxyURL)
+	if err != nil {
+		return nil, err
+	}
 
 	t := &http.Transport{
 		DisableKeepAlives:   opts.DisableKeepAlives,
@@ -125,11 +131,13 @@ func New(opts *Options) (http.Handler, error) {
 	newProxy := newSingleHostReverseProxy(newURL)
 	webProxy := newSingleHostReverseProxy(webURL)
 	webCanaryProxy := newSingleHostReverseProxy(webCanaryURL)
+	webOCISProxy := newSingleHostReverseProxy(webOCISURL)
 
 	oldProxy.Transport = t
 	newProxy.Transport = t
 	webProxy.Transport = t
 	webCanaryProxy.Transport = t
+	webOCISProxy.Transport = t
 
 	versionRegex, err := regexp.Compile(`mirall/(\d+)\.(\d+).?(\d+)?`)
 	if err != nil {
@@ -142,6 +150,7 @@ func New(opts *Options) (http.Handler, error) {
 		newProxy:           newProxy,
 		webProxy:           webProxy,
 		webCanaryProxy:     webCanaryProxy,
+		webOCISProxy:       webOCISProxy,
 		migrator:           opts.Migrator,
 		logger:             opts.Logger,
 		insecureSkipVerify: opts.InsecureSkipVerify,
@@ -255,13 +264,19 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// check if there are any other webdav paths that we have omited, abort in case we find one
 	p.paranoiaDAVcheck(normalizedPath, w, r)
 
+	c, err := r.Cookie("web_canary")
+	// Check if the user needs to be redirected to OCIS
+	if err == nil && c.Value == "ocis" {
+		p.logger.Info("OCIS cookie exists, forwarding", zap.String("path", normalizedPath), zap.Int("ocis-cookie-max-age", c.MaxAge), zap.String("cookie", fmt.Sprintf("%+v", c)))
+		p.webOCISProxy.ServeHTTP(w, r)
+		return
+	}
+
 	// check if request need to be handled by webserver.
 	if p.isWebRequest(normalizedPath, r) {
 		// check if the user is a tester and we send her to the canary or prod
 		// deployments.
-
-		c, err := r.Cookie("web_canary")
-		if err != nil { // no cookie
+		if err != nil || c.Value == "production" { // no cookie
 			p.logger.Info("path is a known web path, forward to normal web proxy", zap.String("path", normalizedPath))
 
 			if strings.HasPrefix(normalizedPath, "/cernbox/mobile") {
