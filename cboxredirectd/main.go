@@ -34,6 +34,7 @@ func init() {
 	gc.Add("new-proxy", "", "server to forward requests for migrated/new users")
 	gc.Add("web-proxy", "", "server to forward requests for web UI/API")
 	gc.Add("web-canary-proxy", "", "server to forward requests for web canary UI/API")
+	gc.Add("web-ocis-proxy", "", "server to forward requests for web OCIS UI/API")
 	gc.Add("http-read-timeout", 300, "the maximum duration for reading the entire request, including the body.")
 	gc.Add("http-write-timeout", 300, "the maximum duration before timing out writes of the response.")
 	gc.Add("tls-cert", "/etc/grid-security/hostcert.pem", "TLS certificate to encrypt connections.")
@@ -179,6 +180,7 @@ func newProxyHandler(migrator api.Migrator) http.Handler {
 		OldProxyURL:         gc.GetString("old-proxy"),
 		WebProxyURL:         gc.GetString("web-proxy"),
 		WebCanaryProxyURL:   gc.GetString("web-canary-proxy"),
+		WebOCISProxyURL:     gc.GetString("web-ocis-proxy"),
 		DisableKeepAlives:   gc.GetBool("proxy-disable-keep-alives"),
 		MaxIdleConns:        gc.GetInt("proxy-max-idle-conns"),
 		MaxIdleConnsPerHost: gc.GetInt("proxy-max-idle-conns-per-host"),
