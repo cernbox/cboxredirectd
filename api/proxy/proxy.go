@@ -267,7 +267,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie("web_canary")
 	// Check if the user needs to be redirected to OCIS
 	if err == nil && c.Value == "ocis" {
-		p.logger.Info("OCIS cookie exists, forwarding", zap.String("path", normalizedPath), zap.Int("ocis-cookie-max-age", c.MaxAge), zap.String("cookie", fmt.Sprintf("%+v", c)))
+		p.logger.Info("path is a known web path, forward to web ocis proxy", zap.String("path", normalizedPath), zap.Int("canary-cookie-max-age", c.MaxAge), zap.String("cookie", fmt.Sprintf("%+v", c)))
 		p.webOCISProxy.ServeHTTP(w, r)
 		return
 	}
