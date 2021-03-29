@@ -272,6 +272,13 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Forward specific paths always to ocis
+	if p.isOcisRequest(normalizedPath, r) {
+		p.logger.Info("path is a known OCIS path, forward to web ocis proxy", zap.String("path", normalizedPath))
+		p.webOCISProxy.ServeHTTP(w, r)
+		return
+	}
+
 	// check if request need to be handled by webserver.
 	if p.isWebRequest(normalizedPath, r) {
 		// check if the user is a tester and we send her to the canary or prod
@@ -326,6 +333,10 @@ var knownWebPaths = []string{
 	"/cernbox/mobile/index.php/apps/files/api",
 }
 
+var knownOCISPaths = []string{
+	"/data",
+}
+
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 	// if path is root, is for the web like cernbox.cern.ch
 	if path == "/" {
@@ -333,6 +344,16 @@ func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 	}
 
 	for _, prefix := range knownWebPaths {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *proxy) isOcisRequest(path string, r *http.Request) bool {
+
+	for _, prefix := range knownOCISPaths {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}
