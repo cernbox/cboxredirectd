@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.30
+Version: 1.0.31
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Thu Apr 22 2021 Diogo Castro <diogo.castro@cern.ch> 1.0.31
+- known old web paths
 * Tue Mar 29 2021 Diogo Castro <diogo.castro@cern.ch> 1.0.30
 - add ocis /data path to known ocis paths
 * Fri Mar 5 2021  Hugo Gonzalez Labrador <hugo.gonzalez.labrador@cern.ch> 1.0.29
