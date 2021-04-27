@@ -279,6 +279,13 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Forward specific paths always to old web
+	if p.isOldWebRequest(normalizedPath, r) {
+		p.logger.Info("path is a known old web path, forward to production", zap.String("path", normalizedPath))
+		p.webProxy.ServeHTTP(w, r)
+		return
+	}
+
 	// check if request need to be handled by webserver.
 	if p.isWebRequest(normalizedPath, r) {
 		// check if the user is a tester and we send her to the canary or prod
@@ -337,6 +344,10 @@ var knownOCISPaths = []string{
 	"/data",
 }
 
+var knownOldWebPaths = []string{
+	"/reset",
+}
+
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 	// if path is root, is for the web like cernbox.cern.ch
 	if path == "/" {
@@ -354,6 +365,16 @@ func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 func (p *proxy) isOcisRequest(path string, r *http.Request) bool {
 
 	for _, prefix := range knownOCISPaths {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *proxy) isOldWebRequest(path string, r *http.Request) bool {
+
+	for _, prefix := range knownOldWebPaths {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}
