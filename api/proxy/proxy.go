@@ -264,14 +264,6 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// check if there are any other webdav paths that we have omited, abort in case we find one
 	p.paranoiaDAVcheck(normalizedPath, w, r)
 
-	c, err := r.Cookie("web_canary")
-	// Check if the user needs to be redirected to OCIS
-	if err == nil && c.Value == "ocis" {
-		p.logger.Info("path is a known web path, forward to web ocis proxy", zap.String("path", normalizedPath), zap.Int("canary-cookie-max-age", c.MaxAge), zap.String("cookie", fmt.Sprintf("%+v", c)))
-		p.webOCISProxy.ServeHTTP(w, r)
-		return
-	}
-
 	// Forward specific paths always to ocis
 	if p.isOcisRequest(normalizedPath, r) {
 		p.logger.Info("path is a known OCIS path, forward to web ocis proxy", zap.String("path", normalizedPath))
@@ -279,15 +271,23 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Forward specific paths always to old web
+	isOldWeb := false
+	// Avoid going to ocis if this is a known old web
 	if p.isOldWebRequest(normalizedPath, r) {
-		p.logger.Info("path is a known old web path, forward to production", zap.String("path", normalizedPath))
-		p.webProxy.ServeHTTP(w, r)
+		p.logger.Info("path is a known old web path, bypassing ocis", zap.String("path", normalizedPath))
+		isOldWeb = true
+	}
+
+	c, err := r.Cookie("web_canary")
+	// Check if the user needs to be redirected to OCIS
+	if !isOldWeb && err == nil && c.Value == "ocis" {
+		p.logger.Info("path is a known web path, forward to web ocis proxy", zap.String("path", normalizedPath), zap.Int("canary-cookie-max-age", c.MaxAge), zap.String("cookie", fmt.Sprintf("%+v", c)))
+		p.webOCISProxy.ServeHTTP(w, r)
 		return
 	}
 
 	// check if request need to be handled by webserver.
-	if p.isWebRequest(normalizedPath, r) {
+	if isOldWeb || p.isWebRequest(normalizedPath, r) {
 		// check if the user is a tester and we send her to the canary or prod
 		// deployments.
 		if err != nil || c.Value == "production" { // no cookie
@@ -325,8 +325,6 @@ var knownWebPaths = []string{
 	"/apps",
 	"/core",
 	"/favicon.ico",
-	"/shibboleth-sp",
-	"/Shibboleth.sso",
 	"/robots.txt",
 	"/swanapi",
 	"/byoa",
@@ -346,6 +344,8 @@ var knownOCISPaths = []string{
 
 var knownOldWebPaths = []string{
 	"/reset",
+	"/shibboleth-sp",
+	"/Shibboleth.sso",
 }
 
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {
