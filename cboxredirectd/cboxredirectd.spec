@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.32
+Version: 1.0.33
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Thu Oct 4 2021 Diogo Castro <diogo.castro@cern.ch> 1.0.33
+- Separate ocis and old web domains
 * Thu Apr 22 2021 Diogo Castro <diogo.castro@cern.ch> 1.0.32
 - fix known ocis/old web redirect
 - always redirect shiboleth to old web
