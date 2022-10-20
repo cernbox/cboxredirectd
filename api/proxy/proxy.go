@@ -25,6 +25,8 @@ type Options struct {
 	WebCanaryProxyURL   string
 	WebOCISProxyURL     string
 	OcisRegex           string
+	OcisRedirect        string
+	OldInfraRegex       string
 	Logger              *zap.Logger
 	Migrator            api.Migrator
 	InsecureSkipVerify  bool
@@ -50,6 +52,8 @@ type proxy struct {
 	webCanaryProxy     *httputil.ReverseProxy
 	webOCISProxy       *httputil.ReverseProxy
 	ocisRegex          *regexp.Regexp
+	ocisRedirect       string
+	oldInfraRegex      *regexp.Regexp
 	migrator           api.Migrator
 	logger             *zap.Logger
 	insecureSkipVerify bool
@@ -146,6 +150,11 @@ func New(opts *Options) (http.Handler, error) {
 		opts.Logger.Error("", zap.Error(err))
 		panic(err)
 	}
+	oldInfraRegex, err := regexp.Compile(opts.OldInfraRegex)
+	if err != nil {
+		opts.Logger.Error("", zap.Error(err))
+		panic(err)
+	}
 
 	versionRegex, err := regexp.Compile(`mirall/(\d+)\.(\d+).?(\d+)?`)
 	if err != nil {
@@ -160,6 +169,8 @@ func New(opts *Options) (http.Handler, error) {
 		webCanaryProxy:     webCanaryProxy,
 		webOCISProxy:       webOCISProxy,
 		ocisRegex:          ocisRegex,
+		ocisRedirect:       opts.OcisRedirect,
+		oldInfraRegex:      oldInfraRegex,
 		migrator:           opts.Migrator,
 		logger:             opts.Logger,
 		insecureSkipVerify: opts.InsecureSkipVerify,
@@ -187,11 +198,19 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	p.logger.Info("migration check", zap.String("username", username), zap.String("non-normalized-path", r.URL.Path), zap.String("normalized-path", normalizedPath), zap.String(api.REDIS_KEY_DEFAULT_GENERIC_OR_UNAUTHENTICATED_DAV_REQUEST, string(defaultGenericOrUnauthenticatedDAVRequest)), zap.String(api.REDIS_KEY_DEFAULT_USER_NOT_FOUND, string(defaultUserNotFound)), zap.String(api.REDIS_KEY_DEFAULT_PROJECT_NOT_FOUND, string(defaultProjectNotFound)))
 
-	// Forward specific paths always to ocis
+	// Forward old ocis domain always to new url
 	if p.isOcisRequest(r) {
-		p.logger.Info("request comes from OCIS domain, forward to web ocis proxy", zap.String("path", normalizedPath))
+		p.logger.Info("request comes from OCIS domain, redirect to default url", zap.String("path", normalizedPath))
+		w.Header().Add("Content-Type", "") // To remove html added automatically in the redirect
+		http.Redirect(w, r, p.ocisRedirect+r.URL.String(), http.StatusMovedPermanently)
+		return
+	}
+
+	if !p.isOldInfra(normalizedPath, r) {
+		p.logger.Info("request is not for old infra, sending to ocis", zap.String("path", normalizedPath))
 		p.webOCISProxy.ServeHTTP(w, r)
 		return
+
 	}
 
 	// prefix is either /cernbox/desktop, /cernbox/mobile or /cernbox/webdav
@@ -336,6 +355,14 @@ var knownWebPaths = []string{
 	"/Shibboleth.sso",
 }
 
+var knownOldPathd = []string{
+	"/cernbox/desktop",
+	"/cernbox/mobile",
+	"/cernbox/webdav",
+	"/swanapi",
+	"/cernbox/update",
+}
+
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 	// if path is root, is for the web like cernbox.cern.ch
 	if path == "/" {
@@ -352,6 +379,19 @@ func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 
 func (p *proxy) isOcisRequest(r *http.Request) bool {
 	return p.ocisRegex.MatchString(r.Host)
+}
+
+func (p *proxy) isOldInfra(path string, r *http.Request) bool {
+	if p.oldInfraRegex.MatchString(r.Host) {
+		return true
+	}
+
+	for _, prefix := range knownOldPathd {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // pathInEOSDAVRealm checks for known webdav paths
