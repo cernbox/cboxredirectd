@@ -361,6 +361,7 @@ var knownOldPathd = []string{
 	"/cernbox/webdav",
 	"/swanapi",
 	"/cernbox/update",
+	"/cernbox/doc",
 }
 
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {
