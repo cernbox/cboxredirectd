@@ -8,9 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cernbox/cboxredirectd/api"
 	"github.com/cernbox/cboxredirectd/api/proxy"
-	"github.com/cernbox/cboxredirectd/api/redismigrator"
 	"github.com/cernbox/gohub/goconfig"
 	"github.com/cernbox/gohub/gologger"
 
@@ -30,8 +28,7 @@ func init() {
 	gc.Add("app-log", "stderr", "file to log application information")
 	gc.Add("http-log", "stderr", "file to log http log information")
 	gc.Add("log-level", "info", "log level to use (debug, info, warn, error)")
-	gc.Add("old-proxy", "", "server to forward requests for non-migrated users")
-	gc.Add("new-proxy", "", "server to forward requests for migrated/new users")
+	gc.Add("eos-proxy", "", "server to forward dav requests or unkown requests")
 	gc.Add("web-proxy", "", "server to forward requests for web UI/API")
 	gc.Add("web-canary-proxy", "", "server to forward requests for web canary UI/API")
 	gc.Add("web-ocis-regex", "new(qa)?.cernbox.cern.ch", "Regex to identify the an ocis path given a request' hostname")
@@ -43,17 +40,6 @@ func init() {
 	gc.Add("tls-cert", "/etc/grid-security/hostcert.pem", "TLS certificate to encrypt connections.")
 	gc.Add("tls-key", "/etc/grid-security/hostkey.pem", "TLS private key to encrypt connections.")
 	gc.Add("tls-enable", false, "Enable TLS for encrypting connections.")
-
-	gc.Add("redis-tcp-address", "localhost:6379", "redis tcp address")
-	gc.Add("redis-read-timeout", 3, "timeout for socket reads. If reached, commands will fail with a timeout instead of blocking. Zero means default.")
-	gc.Add("redis-write-timeout", 0, "timeout for socket writes. If reached, commands will fail with a timeout instead of blocking. Zero means redis-read-timeout.")
-	gc.Add("redis-dial-timeout", 5, "dial timeout for establishing new connections. Zero means default.")
-	gc.Add("redis-idle-check-frequency", 60, "frequency of idle checks. Zero means default. When minus value is set, then idle check is disabled.")
-	gc.Add("redis-idle-timeout", 300, "amount of time after which client closes idle connections. Should be less than server's timeout. Zero means default.")
-	gc.Add("redis-max-retries", 0, "maximum number of retries before giving up. Zero means not retry failed commands.")
-	gc.Add("redis-pool-size", 0, "maximum number of socket connections. Zermo means 10 connections per every CPU as reported by runtime.NumCPU.")
-	gc.Add("redis-pool-timeout", 0, "time a client waits for connection if all connections are busy before returning an error. Zero means redis-read-timeout + 1 second.")
-	gc.Add("redis-password", "", "the password to authenticate to a protected Redis instance. Empty means no authentication.")
 
 	gc.Add("proxy-disable-keep-alives", false, "if true, prevents re-use of TCP connections between different HTTP requests.")
 	gc.Add("proxy-max-idle-conns", 0, "controls the maximum number of idle (keep-alive) connections across all hosts. Zero means no limit.")
@@ -74,9 +60,8 @@ func init() {
 func main() {
 
 	gracehttp.SetLogger(zap.NewStdLog(logger))
-	migrator := newMigrator()
 
-	proxyHandler := newProxyHandler(migrator)
+	proxyHandler := newProxyHandler()
 	loggedHandler := gologger.GetLoggedHTTPHandler(gc.GetString("http-log"), proxyHandler)
 
 	servers := []*http.Server{}
@@ -140,29 +125,7 @@ func getRedirectServer() *http.Server {
 	return s
 }
 
-func newMigrator() api.Migrator {
-	migratorOpts := &redismigrator.Options{
-		Address:            gc.GetString("redis-tcp-address"),
-		DialTimeout:        gc.GetInt("redis-dial-timeout"),
-		IdleCheckFrequency: gc.GetInt("redis-idle-check-frequency"),
-		IdleTimeout:        gc.GetInt("redis-idle-timeout"),
-		Logger:             logger,
-		MaxRetries:         gc.GetInt("redis-max-retries"),
-		PoolSize:           gc.GetInt("redis-pool-size"),
-		PoolTimeout:        gc.GetInt("redis-pool-timeout"),
-		ReadTimeout:        gc.GetInt("redis-read-timeout"),
-		WriteTimeout:       gc.GetInt("redis-write-timeout"),
-		Password:           gc.GetString("redis-password"),
-	}
-	migrator, err := redismigrator.New(migratorOpts)
-	if err != nil {
-		logger.Error("", zap.Error(err))
-		panic(err)
-	}
-	return migrator
-}
-
-func newProxyHandler(migrator api.Migrator) http.Handler {
+func newProxyHandler() http.Handler {
 
 	minimumSyncClientString := strings.Split(gc.GetString("minimum-sync-client"), ".")
 	minimumSyncClient := []int{}
@@ -178,9 +141,7 @@ func newProxyHandler(migrator api.Migrator) http.Handler {
 
 	proxyOpts := &proxy.Options{
 		Logger:              logger,
-		Migrator:            migrator,
-		NewProxyURL:         gc.GetString("new-proxy"),
-		OldProxyURL:         gc.GetString("old-proxy"),
+		EosProxyURL:         gc.GetString("eos-proxy"),
 		WebProxyURL:         gc.GetString("web-proxy"),
 		WebCanaryProxyURL:   gc.GetString("web-canary-proxy"),
 		WebOCISProxyURL:     gc.GetString("web-ocis-proxy"),
