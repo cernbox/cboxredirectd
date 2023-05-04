@@ -4,7 +4,7 @@
 
 Name: cboxredirectd
 Summary: Redirection daemon for CERNBox 
-Version: 1.0.35
+Version: 1.0.36
 Release: 1%{?dist}
 License: AGPLv3
 BuildRoot: %{_tmppath}/%{name}-buildroot
@@ -54,6 +54,8 @@ rm -rf %buildroot/
 
 
 %changelog
+* Thu May 04 2023 Diogo Castro <diogo.castro@cern.ch> 1.0.36
+- Remove migration logic (redis)
 * Mon Oct 24 2022 Diogo Castro <diogo.castro@cern.ch> 1.0.35
 - Handle doc url in old infra
 * Mon Aug 29 2022 Diogo Castro <diogo.castro@cern.ch> 1.0.34
