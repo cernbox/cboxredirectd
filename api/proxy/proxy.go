@@ -179,9 +179,10 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// TEMPORARY REDIRECT
 	// People may have bookmarked old URLs, we provide a redirection for those
 	// for example, old.cernbox.cern.ch/index.php/s/... -> cernbox.cern.ch/index.php/s/...
+	// for example, new.cernbox.cern.ch/index.php/s/... -> cernbox.cern.ch/index.php/s/...
 	// The translation of the urls is done by the web frontend
-	if p.isOldWebURLToMigrateToOCIS(r) {
-		p.logger.Info("request comes from OCIS domain, redirect to default url", zap.String("path", normalizedPath))
+	if p.isTemporaryURL(r) {
+		p.logger.Info("request comes from a temporary URL, redirect to default url", zap.String("path", normalizedPath))
 		w.Header().Add("Content-Type", "") // To remove html added automatically in the redirect
 		http.Redirect(w, r, p.ocisRedirect+r.URL.String(), http.StatusMovedPermanently)
 		return
@@ -215,14 +216,11 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// check if there are any other webdav paths that we have omited, abort in case we find one
-	p.paranoiaDAVcheck(normalizedPath, w, r)
-
 	// at this point, the request is not being served by OCIS nor is a WebDAV request handled by EOS
-	// We first check if the request is served by the old PHP server, if so, we send there.
+	// We first check if the request is served by the old PHP server (isWebRequest), and if so, we send there.
 	// else, we send the traffic to the EOS proxies as fallback.
 
-	// check if request need to be handled by webserver.
+	// check if request need to be handled by old PHP webserver.
 	if p.isWebRequest(normalizedPath, r) {
 		p.logger.Info("path is a known web path, forward to normal web proxy", zap.String("path", normalizedPath))
 		if strings.HasPrefix(normalizedPath, "/cernbox/mobile") {
@@ -232,6 +230,9 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.webProxy.ServeHTTP(w, r)
 		return
 	}
+
+	// check if there are any other webdav paths that we have omited, abort in case we find one
+	p.paranoiaDAVcheck(normalizedPath, w, r)
 
 	// fallback request to eos proxy
 	p.logger.Info("fallback request to eos proxy", zap.String("username", username), zap.String("path", normalizedPath))
@@ -297,7 +298,7 @@ func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 	return false
 }
 
-func (p *proxy) isOldWebURLToMigrateToOCIS(r *http.Request) bool {
+func (p *proxy) isTemporaryURL(r *http.Request) bool {
 	return p.ocisRegex.MatchString(r.Host)
 }
 
@@ -328,13 +329,12 @@ func (p *proxy) paranoiaDAVcheck(normalizedPath string, w http.ResponseWriter, r
 	// check if the url contains remote.php/webdav in another location of the url
 	// the remote.php/webdav endpoint used by the web UI is whitelisted.
 
-	if strings.HasPrefix(normalizedPath, "/remote.php/webdav") ||
-		strings.HasPrefix(normalizedPath, "remote.php/webdav") ||
-		strings.HasPrefix(normalizedPath, "/remote.php/dav") ||
-		strings.HasPrefix(normalizedPath, "remote.php/dav") {
-		msg := fmt.Sprintf("CRITICAL: webdav path not controlled in logic rules => %s", normalizedPath)
-		p.logger.Error(msg, zap.String("normalizedPath", normalizedPath))
-		panic("CRITICAL: " + normalizedPath)
+	if !strings.HasPrefix(normalizedPath, "/remote.php/webdav") { //whitelist web traffic, remanining traffic must contain cernbox/desktop or cernbox/mobile
+		if strings.Contains(normalizedPath, "remote.php/webdav") || strings.Contains(normalizedPath, "remote.php/dav/files") {
+			msg := fmt.Sprintf("CRITICAL: webdav path not controlled in logic rules => %s", normalizedPath)
+			p.logger.Error(msg, zap.String("normalizedPath", normalizedPath))
+			panic("CRITICAL: " + normalizedPath)
+		}
 	}
 }
 
