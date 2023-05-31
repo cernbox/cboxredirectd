@@ -13,14 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cernbox/cboxredirectd/api"
-
 	"go.uber.org/zap"
 )
 
 type Options struct {
-	OldProxyURL         string
-	NewProxyURL         string
+	EosProxyURL         string
 	WebProxyURL         string
 	WebCanaryProxyURL   string
 	WebOCISProxyURL     string
@@ -28,7 +25,6 @@ type Options struct {
 	OcisRedirect        string
 	OldInfraRegex       string
 	Logger              *zap.Logger
-	Migrator            api.Migrator
 	InsecureSkipVerify  bool
 	DisableKeepAlives   bool
 	MaxIdleConns        int
@@ -46,15 +42,13 @@ func (opts *Options) init() {
 }
 
 type proxy struct {
-	oldProxy           *httputil.ReverseProxy
-	newProxy           *httputil.ReverseProxy
+	eosProxy           *httputil.ReverseProxy
 	webProxy           *httputil.ReverseProxy
 	webCanaryProxy     *httputil.ReverseProxy
 	webOCISProxy       *httputil.ReverseProxy
 	ocisRegex          *regexp.Regexp
 	ocisRedirect       string
 	oldInfraRegex      *regexp.Regexp
-	migrator           api.Migrator
 	logger             *zap.Logger
 	insecureSkipVerify bool
 	MinimumSyncClient  []int
@@ -103,11 +97,7 @@ func newSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 // New creates a new proxy handlers.
 func New(opts *Options) (http.Handler, error) {
 	opts.init()
-	oldURL, err := url.Parse(opts.OldProxyURL)
-	if err != nil {
-		return nil, err
-	}
-	newURL, err := url.Parse(opts.NewProxyURL)
+	eosURL, err := url.Parse(opts.EosProxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -133,14 +123,12 @@ func New(opts *Options) (http.Handler, error) {
 		DisableCompression:  opts.DisableCompression,
 	}
 
-	oldProxy := newSingleHostReverseProxy(oldURL)
-	newProxy := newSingleHostReverseProxy(newURL)
+	eosProxy := newSingleHostReverseProxy(eosURL)
 	webProxy := newSingleHostReverseProxy(webURL)
 	webCanaryProxy := newSingleHostReverseProxy(webCanaryURL)
 	webOCISProxy := newSingleHostReverseProxy(webOCISURL)
 
-	oldProxy.Transport = t
-	newProxy.Transport = t
+	eosProxy.Transport = t
 	webProxy.Transport = t
 	webCanaryProxy.Transport = t
 	webOCISProxy.Transport = t
@@ -163,15 +151,13 @@ func New(opts *Options) (http.Handler, error) {
 	}
 
 	return &proxy{
-		oldProxy:           oldProxy,
-		newProxy:           newProxy,
+		eosProxy:           eosProxy,
 		webProxy:           webProxy,
 		webCanaryProxy:     webCanaryProxy,
 		webOCISProxy:       webOCISProxy,
 		ocisRegex:          ocisRegex,
 		ocisRedirect:       opts.OcisRedirect,
 		oldInfraRegex:      oldInfraRegex,
-		migrator:           opts.Migrator,
 		logger:             opts.Logger,
 		insecureSkipVerify: opts.InsecureSkipVerify,
 		MinimumSyncClient:  opts.MinimumSyncClient,
@@ -181,14 +167,8 @@ func New(opts *Options) (http.Handler, error) {
 }
 
 func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	username, password, okBasicAuth := r.BasicAuth()
 	normalizedPath := path.Clean(r.URL.Path)
-
-	defaultGenericOrUnauthenticatedDAVRequest := p.migrator.GetDefaultGenericOrUnAuthenticatedDAVRequest(ctx)
-	defaultUserNotFound := p.migrator.GetDefaultUserNotFound(ctx)
-	defaultProjectNotFound := p.migrator.GetDefaultProjectNotFound(ctx)
-	defaultNonDAVRequest := p.migrator.GetDefaultNonDAVRequest(ctx)
 
 	// Make usernames lowercase to avoid unauthenticated requests from EOS
 	username = strings.ToLower(username)
@@ -196,16 +176,21 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.SetBasicAuth(username, password)
 	}
 
-	p.logger.Info("migration check", zap.String("username", username), zap.String("non-normalized-path", r.URL.Path), zap.String("normalized-path", normalizedPath), zap.String(api.REDIS_KEY_DEFAULT_GENERIC_OR_UNAUTHENTICATED_DAV_REQUEST, string(defaultGenericOrUnauthenticatedDAVRequest)), zap.String(api.REDIS_KEY_DEFAULT_USER_NOT_FOUND, string(defaultUserNotFound)), zap.String(api.REDIS_KEY_DEFAULT_PROJECT_NOT_FOUND, string(defaultProjectNotFound)))
-
-	// Forward old ocis domain always to new url
-	if p.isOcisRequest(r) {
-		p.logger.Info("request comes from OCIS domain, redirect to default url", zap.String("path", normalizedPath))
+	// TEMPORARY REDIRECT
+	// People may have bookmarked old URLs, we provide a redirection for those
+	// for example, old.cernbox.cern.ch/index.php/s/... -> cernbox.cern.ch/index.php/s/...
+	// for example, new.cernbox.cern.ch/index.php/s/... -> cernbox.cern.ch/index.php/s/...
+	// The translation of the urls is done by the web frontend
+	if p.isTemporaryURL(r) {
+		p.logger.Info("request comes from a temporary URL, redirect to default url", zap.String("path", normalizedPath))
 		w.Header().Add("Content-Type", "") // To remove html added automatically in the redirect
 		http.Redirect(w, r, p.ocisRedirect+r.URL.String(), http.StatusMovedPermanently)
 		return
 	}
 
+	// old infra contains host-based regex (old.cernbox.cern.ch) and also
+	// "/cernbox/desktop", "/cernbox/mobile", "/cernbox/webdav", "/swanapi", "/cernbox/update", "/cernbox/doc",
+	/// If request does NOT contain any of these, we forward to OCIS
 	if !p.isOldInfra(normalizedPath, r) {
 		p.logger.Info("request is not for old infra, sending to ocis", zap.String("path", normalizedPath))
 		p.webOCISProxy.ServeHTTP(w, r)
@@ -213,117 +198,45 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	}
 
+	// WebDAV traffic from sync clients, mobile devices or just generic webdav
 	// prefix is either /cernbox/desktop, /cernbox/mobile or /cernbox/webdav
-	if ok, prefix := p.pathInEOSDAVRealm(ctx, username, normalizedPath); ok {
+	if ok := p.isEosPath(normalizedPath); ok {
 
 		userAgent := r.Header.Get("User-Agent")
 
+		// validate sync client version
 		if !p.validClient(userAgent) {
 			w.WriteHeader(http.StatusForbidden)
 			p.logger.Info("rejected client", zap.String("username", username), zap.String("userAgent", userAgent))
 			return
 		}
 
-		// remove the prefix from the normalizedPath to have a clean EOS path
-		// eosPath is be "", "/", "/home", "/eos", "/home/docs", "/eos/user" or something weird like "mambo jampo
-		eosPath := path.Clean(strings.TrimPrefix(normalizedPath, prefix))
-		p.logger.Info("obtained eospath", zap.String("username", username), zap.String("eospath", eosPath), zap.String("webdavprefix", prefix))
+		p.logger.Info("serving from eos proxy", zap.String("path", normalizedPath))
+		p.eosProxy.ServeHTTP(w, r)
+		return
+	}
 
-		var redisKey string
-		var redisKeyType api.RedisKeyType
-		// requests coming from the mobile clients treat "home" as "/", that is why we have
-		// the magic CBOX_MAPPING headers in the gateways, we treat requests coming from mobile as always
-		// from home.
-		if strings.HasPrefix(eosPath, "/home") || prefix == "/cernbox/mobile/remote.php/webdav" {
-			p.logger.Info("eosPath starts with /home prefix or is a mobile path", zap.String("username", username), zap.String("eospath", eosPath), zap.String("webdavprefix", prefix))
-			// we need a valid username to know where to send the guy
-			if username == "" {
-				p.logger.Info("username is empty, we forward to default for generic or unauthenticated dav requests", zap.String("username", username), zap.String("default", string(defaultGenericOrUnauthenticatedDAVRequest)))
-				// apply default logic for non authenticated users
-				p.applyDefaultForGenericOrUnauthenticatedDAVRequest(defaultGenericOrUnauthenticatedDAVRequest, w, r)
-				return
-			}
+	// at this point, the request is not being served by OCIS nor is a WebDAV request handled by EOS
+	// We first check if the request is served by the old PHP server (isWebRequest), and if so, we send there.
+	// else, we send the traffic to the EOS proxies as fallback.
 
-			// username is set, we know the user, so we know also his homedirectory
-			homeDirectory := fmt.Sprintf("/eos/user/%s/%s", string(username[0]), username)
-			p.logger.Info("username is set, we create its home directory key", zap.String("username", username), zap.String("homeDirectory", homeDirectory), zap.String("username", username))
-			redisKey = homeDirectory
-			redisKeyType = api.RedisKeyUser
-
-		} else {
-			p.logger.Info("eospath does not start with /home prefix", zap.String("username", username), zap.String("eospath", eosPath), zap.String("webdavprefix", prefix))
-			// the path is not /home, so we will try to infer the redis key from the path
-			key, keyType, found := p.inferRedisKey(ctx, eosPath)
-			if !found {
-				p.logger.Info("the redis key could not be extracted from the path, we forward to the default for generic or unauthenticated dav requests", zap.String("username", username), zap.String("eospath", eosPath), zap.String("webdavprefix", prefix), zap.String("username", username))
-				p.applyDefaultForGenericOrUnauthenticatedDAVRequest(defaultGenericOrUnauthenticatedDAVRequest, w, r)
-				return
-			}
-
-			// the path is known and the redis key has been extracted
-			redisKey = key
-			redisKeyType = keyType
+	// check if request need to be handled by old PHP webserver.
+	if p.isWebRequest(normalizedPath, r) {
+		p.logger.Info("path is a known web path, forward to normal web proxy", zap.String("path", normalizedPath))
+		if strings.HasPrefix(normalizedPath, "/cernbox/mobile") {
+			p.logger.Info("request is from a new mobile client", zap.String("path", normalizedPath))
+			r.Header.Add("CBOXCLIENTMAPPING", "/cernbox/mobile")
 		}
-
-		p.logger.Info("redis key extracted", zap.String("username", username), zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)))
-		// ask redis for this key
-		isMigrated, found := p.migrator.IsKeyMigrated(ctx, redisKey)
-		if !found {
-			p.logger.Info("redis key not found, forward for default key not found", zap.String("username", username), zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)))
-			// this entry has not been found in the redis database, so we apply the defaults based on the redisKeyType
-			if redisKeyType == api.RedisKeyUser {
-				p.logger.Info("user not found, forwards to default for user not found", zap.String("username", username), zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)), zap.String("default", string(defaultUserNotFound)))
-				p.applyDefaultForUserNotFound(defaultUserNotFound, w, r)
-				return
-			} else {
-				p.logger.Info("project not found, forwards to default for project not found", zap.String("username", username), zap.String("key", redisKey), zap.String("keyType", string(redisKeyType)), zap.String("default", string(defaultProjectNotFound)))
-				p.applyDefaultForProjectNotFound(defaultProjectNotFound, w, r)
-				return
-			}
-			panic("it should never enter here")
-		}
-
-		// the key is found and we redirect accordingly to the value of the key.
-		if isMigrated {
-			p.logger.Info("key is migrated, forward to new-proxy", zap.String("username", username), zap.String("key", redisKey), zap.String("proxy", "new-proxy"))
-			p.newProxy.ServeHTTP(w, r)
-			return
-		} else {
-			p.logger.Info("key is not migrated, forward to old-proxy", zap.String("username", username), zap.String("key", redisKey), zap.String("proxy", "old-proxy"))
-			p.oldProxy.ServeHTTP(w, r)
-			return
-		}
-
+		p.webProxy.ServeHTTP(w, r)
+		return
 	}
 
 	// check if there are any other webdav paths that we have omited, abort in case we find one
 	p.paranoiaDAVcheck(normalizedPath, w, r)
 
-	c, err := r.Cookie("web_canary")
-	// check if request need to be handled by webserver.
-	if p.isWebRequest(normalizedPath, r) {
-		// check if the user is a tester and we send her to the canary or prod
-		// deployments.
-		if err != nil || c.Value == "production" { // no cookie
-			p.logger.Info("path is a known web path, forward to normal web proxy", zap.String("path", normalizedPath))
-
-			if strings.HasPrefix(normalizedPath, "/cernbox/mobile") {
-				p.logger.Info("request is from a new mobile client", zap.String("path", normalizedPath))
-				r.Header.Add("CBOXCLIENTMAPPING", "/cernbox/mobile")
-			}
-
-			p.webProxy.ServeHTTP(w, r)
-			return
-		}
-		// cookie is set so we send to canary web.
-		p.logger.Info("path is a known web path, forward to web canary proxy", zap.String("path", normalizedPath), zap.Int("canary-cookie-max-age", c.MaxAge), zap.String("cookie", fmt.Sprintf("%+v", c)))
-		p.webCanaryProxy.ServeHTTP(w, r)
-		return
-	}
-
-	// the request is a non webdav request so we apply the default for non webdav requests
-	p.logger.Info("request is non webdav and non web, forward to the default for non dav requests", zap.String("username", username), zap.String("path", normalizedPath))
-	p.applyDefaultForNonDAVRequest(defaultNonDAVRequest, w, r)
+	// fallback request to eos proxy
+	p.logger.Info("fallback request to eos proxy", zap.String("username", username), zap.String("path", normalizedPath))
+	p.eosProxy.ServeHTTP(w, r)
 	return
 }
 
@@ -355,13 +268,20 @@ var knownWebPaths = []string{
 	"/Shibboleth.sso",
 }
 
-var knownOldPathd = []string{
+var knownOldPaths = []string{
 	"/cernbox/desktop",
 	"/cernbox/mobile",
 	"/cernbox/webdav",
 	"/swanapi",
 	"/cernbox/update",
 	"/cernbox/doc",
+}
+
+var eosDav = []string{
+	"/cernbox/desktop/remote.php/dav",
+	"/cernbox/desktop/remote.php/webdav",
+	"/cernbox/mobile/remote.php/webdav",
+	"/cernbox/webdav",
 }
 
 func (p *proxy) isWebRequest(path string, r *http.Request) bool {
@@ -378,7 +298,7 @@ func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 	return false
 }
 
-func (p *proxy) isOcisRequest(r *http.Request) bool {
+func (p *proxy) isTemporaryURL(r *http.Request) bool {
 	return p.ocisRegex.MatchString(r.Host)
 }
 
@@ -387,7 +307,7 @@ func (p *proxy) isOldInfra(path string, r *http.Request) bool {
 		return true
 	}
 
-	for _, prefix := range knownOldPathd {
+	for _, prefix := range knownOldPaths {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}
@@ -395,126 +315,26 @@ func (p *proxy) isOldInfra(path string, r *http.Request) bool {
 	return false
 }
 
-// pathInEOSDAVRealm checks for known webdav paths
-func (p *proxy) pathInEOSDAVRealm(ctx context.Context, username, path string) (bool, string) {
-	cernboxDesktop := "/cernbox/desktop/remote.php/webdav"
-	cernboxMobile := "/cernbox/mobile/remote.php/webdav"
-	cernboxOther := "/cernbox/webdav"
-
-	if strings.HasPrefix(path, cernboxDesktop) {
-		return true, cernboxDesktop
+// isEosPath checks for known webdav paths
+func (p *proxy) isEosPath(path string) bool {
+	for _, prefix := range eosDav {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
 	}
-
-	if strings.HasPrefix(path, cernboxMobile) {
-		return true, cernboxMobile
-	}
-
-	if strings.HasPrefix(path, cernboxOther) {
-		return true, cernboxOther
-	}
-
-	return false, ""
+	return false
 }
 
 func (p *proxy) paranoiaDAVcheck(normalizedPath string, w http.ResponseWriter, r *http.Request) {
 	// check if the url contains remote.php/webdav in another location of the url
 	// the remote.php/webdav endpoint used by the web UI is whitelisted.
 
-	if !strings.HasPrefix(normalizedPath, "/remote.php/webdav") {
-		if strings.Contains(normalizedPath, "remote.php/webdav") {
+	if !strings.HasPrefix(normalizedPath, "/remote.php/webdav") { //whitelist web traffic, remanining traffic must contain cernbox/desktop or cernbox/mobile
+		if strings.Contains(normalizedPath, "remote.php/webdav") || strings.Contains(normalizedPath, "remote.php/dav/files") {
 			msg := fmt.Sprintf("CRITICAL: webdav path not controlled in logic rules => %s", normalizedPath)
 			p.logger.Error(msg, zap.String("normalizedPath", normalizedPath))
 			panic("CRITICAL: " + normalizedPath)
 		}
-	}
-}
-
-const (
-	eosUserPrefix    = "/eos/user"
-	eosProjectPrefix = "/eos/project"
-)
-
-func (p *proxy) inferRedisKey(ctx context.Context, eosPath string) (string, api.RedisKeyType, bool) {
-	var redisKey string
-	var redisKeyType api.RedisKeyType
-
-	if strings.HasPrefix(eosPath, eosUserPrefix) {
-		redisKey = eosUserPrefix
-		redisKeyType = api.RedisKeyUser
-	} else if strings.HasPrefix(eosPath, eosProjectPrefix) {
-		redisKey = eosProjectPrefix
-		redisKeyType = api.RedisKeyProject
-	}
-
-	if redisKey == "" {
-		return "", redisKeyType, false // url does not match /eos/user or /eos/project, like /eos/lhcb
-
-	}
-
-	right := strings.Trim(strings.TrimPrefix(eosPath, redisKey), "/") // l/labrador or l/labradorsvc or l or l/labradorsvc/Docs or csc or c/cbox or csc/Docs or c/cbox/Docs
-	tokens := strings.Split(right, "/")
-	if len(tokens) > 1 {
-		if len(tokens[0]) == 1 { // l/labradorsvc
-			redisKey = path.Join(redisKey, path.Join(tokens[0:2]...))
-		} else {
-			redisKey = path.Join(redisKey, tokens[0]) // csc/Docs
-		}
-	}
-
-	if len(tokens) == 1 {
-		redisKey = path.Join(redisKey, tokens[0])
-	}
-
-	return redisKey, redisKeyType, true
-
-}
-
-func (p *proxy) applyDefaultForProjectNotFound(val api.DefaultProjectNotFound, w http.ResponseWriter, r *http.Request) {
-	if val == api.DefaultProjectNotFoundOldProxy {
-		p.logger.Info("project not found", zap.String("proxy", "old-proxy"))
-		p.oldProxy.ServeHTTP(w, r)
-		return
-	} else {
-		p.logger.Info("project not found", zap.String("proxy", "new-proxy"))
-		p.newProxy.ServeHTTP(w, r)
-		return
-	}
-}
-
-func (p *proxy) applyDefaultForUserNotFound(val api.DefaultUserNotFound, w http.ResponseWriter, r *http.Request) {
-	if val == api.DefaultUserNotFoundOldProxy {
-		p.logger.Info("user not found", zap.String("proxy", "old-proxy"))
-		p.oldProxy.ServeHTTP(w, r)
-		return
-	} else {
-		p.logger.Info("user not found", zap.String("proxy", "new-proxy"))
-		p.newProxy.ServeHTTP(w, r)
-		return
-	}
-
-}
-
-func (p *proxy) applyDefaultForGenericOrUnauthenticatedDAVRequest(val api.DefaultGenericOrUnAuthenticatedDAVRequest, w http.ResponseWriter, r *http.Request) {
-	if val == api.DefaultGenericOrUnAuthenticatedDAVRequestOldProxy {
-		p.logger.Info("generic or non authenticated dav request", zap.String("proxy", "old-proxy"))
-		p.oldProxy.ServeHTTP(w, r)
-		return
-	} else {
-		p.logger.Info("generic or non authenticated dav request", zap.String("proxy", "new-proxy"))
-		p.newProxy.ServeHTTP(w, r)
-		return
-	}
-}
-
-func (p *proxy) applyDefaultForNonDAVRequest(val api.DefaultNonDAVRequest, w http.ResponseWriter, r *http.Request) {
-	if val == api.DefaultNonDAVRequestOldProxy {
-		p.logger.Info("non-webdav request", zap.String("proxy", "old-proxy"))
-		p.oldProxy.ServeHTTP(w, r)
-		return
-	} else {
-		p.logger.Info("non-webdav request", zap.String("proxy", "new-proxy"))
-		p.newProxy.ServeHTTP(w, r)
-		return
 	}
 }
 
