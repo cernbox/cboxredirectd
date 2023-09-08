@@ -257,6 +257,8 @@ var knownWebPaths = []string{
 	"/reset",
 	"/shibboleth-sp",
 	"/Shibboleth.sso",
+	"/cernbox/desktop/status.php",
+	"/cernbox/mobile/status.php",
 }
 
 var knownOldPaths = []string{
