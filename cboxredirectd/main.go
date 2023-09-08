@@ -35,7 +35,6 @@ func init() {
 	gc.Add("web-ocis-redirect", "cernbox.cern.ch", "URL to redirect the ocis requests to")
 	gc.Add("old-infra-regex", "old(qa)?.cernbox.cern.ch", "Regex to identify the old infra given a request' hostname")
 	gc.Add("web-ocis-proxy", "", "server to forward requests for web OCIS UI/API")
-	gc.Add("api-proxy", "https://api.cernbox.cern.ch", "server to forward requests for api")
 	gc.Add("http-read-timeout", 300, "the maximum duration for reading the entire request, including the body.")
 	gc.Add("http-write-timeout", 300, "the maximum duration before timing out writes of the response.")
 	gc.Add("tls-cert", "/etc/grid-security/hostcert.pem", "TLS certificate to encrypt connections.")
@@ -146,7 +145,6 @@ func newProxyHandler() http.Handler {
 		WebProxyURL:         gc.GetString("web-proxy"),
 		WebCanaryProxyURL:   gc.GetString("web-canary-proxy"),
 		WebOCISProxyURL:     gc.GetString("web-ocis-proxy"),
-		ApiProxyURL:         gc.GetString("api-proxy"),
 		OcisRegex:           gc.GetString("web-ocis-regex"),
 		OcisRedirect:        gc.GetString("web-ocis-redirect"),
 		OldInfraRegex:       gc.GetString("old-infra-regex"),
