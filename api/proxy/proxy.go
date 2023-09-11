@@ -19,7 +19,6 @@ import (
 type Options struct {
 	EosProxyURL         string
 	WebProxyURL         string
-	WebCanaryProxyURL   string
 	WebOCISProxyURL     string
 	OcisRegex           string
 	OcisRedirect        string
@@ -44,7 +43,6 @@ func (opts *Options) init() {
 type proxy struct {
 	eosProxy           *httputil.ReverseProxy
 	webProxy           *httputil.ReverseProxy
-	webCanaryProxy     *httputil.ReverseProxy
 	webOCISProxy       *httputil.ReverseProxy
 	ocisRegex          *regexp.Regexp
 	ocisRedirect       string
@@ -105,10 +103,6 @@ func New(opts *Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	webCanaryURL, err := url.Parse(opts.WebCanaryProxyURL)
-	if err != nil {
-		return nil, err
-	}
 	webOCISURL, err := url.Parse(opts.WebOCISProxyURL)
 	if err != nil {
 		return nil, err
@@ -125,12 +119,10 @@ func New(opts *Options) (http.Handler, error) {
 
 	eosProxy := newSingleHostReverseProxy(eosURL)
 	webProxy := newSingleHostReverseProxy(webURL)
-	webCanaryProxy := newSingleHostReverseProxy(webCanaryURL)
 	webOCISProxy := newSingleHostReverseProxy(webOCISURL)
 
 	eosProxy.Transport = t
 	webProxy.Transport = t
-	webCanaryProxy.Transport = t
 	webOCISProxy.Transport = t
 
 	ocisRegex, err := regexp.Compile(opts.OcisRegex)
@@ -153,7 +145,6 @@ func New(opts *Options) (http.Handler, error) {
 	return &proxy{
 		eosProxy:           eosProxy,
 		webProxy:           webProxy,
-		webCanaryProxy:     webCanaryProxy,
 		webOCISProxy:       webOCISProxy,
 		ocisRegex:          ocisRegex,
 		ocisRedirect:       opts.OcisRedirect,
