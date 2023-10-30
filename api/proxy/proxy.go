@@ -19,9 +19,7 @@ import (
 type Options struct {
 	EosProxyURL         string
 	WebProxyURL         string
-	WebCanaryProxyURL   string
 	WebOCISProxyURL     string
-	ApiProxyURL         string
 	OcisRegex           string
 	OcisRedirect        string
 	OldInfraRegex       string
@@ -45,9 +43,7 @@ func (opts *Options) init() {
 type proxy struct {
 	eosProxy           *httputil.ReverseProxy
 	webProxy           *httputil.ReverseProxy
-	webCanaryProxy     *httputil.ReverseProxy
 	webOCISProxy       *httputil.ReverseProxy
-	apiProxy           *httputil.ReverseProxy
 	ocisRegex          *regexp.Regexp
 	ocisRedirect       string
 	oldInfraRegex      *regexp.Regexp
@@ -107,15 +103,7 @@ func New(opts *Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	webCanaryURL, err := url.Parse(opts.WebCanaryProxyURL)
-	if err != nil {
-		return nil, err
-	}
 	webOCISURL, err := url.Parse(opts.WebOCISProxyURL)
-	if err != nil {
-		return nil, err
-	}
-	apiURL, err := url.Parse(opts.ApiProxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -131,15 +119,11 @@ func New(opts *Options) (http.Handler, error) {
 
 	eosProxy := newSingleHostReverseProxy(eosURL)
 	webProxy := newSingleHostReverseProxy(webURL)
-	webCanaryProxy := newSingleHostReverseProxy(webCanaryURL)
 	webOCISProxy := newSingleHostReverseProxy(webOCISURL)
-	apiProxy := newSingleHostReverseProxy(apiURL)
 
 	eosProxy.Transport = t
 	webProxy.Transport = t
-	webCanaryProxy.Transport = t
 	webOCISProxy.Transport = t
-	apiProxy.Transport = t
 
 	ocisRegex, err := regexp.Compile(opts.OcisRegex)
 	if err != nil {
@@ -161,9 +145,7 @@ func New(opts *Options) (http.Handler, error) {
 	return &proxy{
 		eosProxy:           eosProxy,
 		webProxy:           webProxy,
-		webCanaryProxy:     webCanaryProxy,
 		webOCISProxy:       webOCISProxy,
-		apiProxy:           apiProxy,
 		ocisRegex:          ocisRegex,
 		ocisRedirect:       opts.OcisRedirect,
 		oldInfraRegex:      oldInfraRegex,
@@ -196,17 +178,6 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, p.ocisRedirect+r.URL.String(), http.StatusMovedPermanently)
 		return
 	}
-
-	// cernbox/desktop/ocs/
-	// cernbox/mobile/ocs/
-	if ok, trim := p.isApiPath(normalizedPath); ok {
-		p.logger.Info("request goes to api proxy", zap.String("path", normalizedPath))
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, trim)
-		p.apiProxy.ServeHTTP(w, r)
-		return
-	}
-
-	// TODO:  hook here to send to ocs requests from desktop to OCIS api instead of old server
 
 	// old infra contains host-based regex (old.cernbox.cern.ch) and also
 	// "/cernbox/desktop", "/cernbox/mobile", "/cernbox/webdav", "/swanapi", "/cernbox/update", "/cernbox/doc",
@@ -297,12 +268,6 @@ var knownOldPaths = []string{
 	"/cernbox/doc",
 }
 
-// key is path to match and value is prefix to trim from request
-var apiMap = map[string]string{
-	"/cernbox/desktop/ocs/": "/cernbox/desktop",
-	"/cernbox/mobile/ocs/":  "/cernbox/mobile",
-}
-
 var eosDav = []string{
 	"/cernbox/desktop/remote.php/dav",
 	"/cernbox/desktop/remote.php/webdav",
@@ -326,15 +291,6 @@ func (p *proxy) isWebRequest(path string, r *http.Request) bool {
 
 func (p *proxy) isTemporaryURL(r *http.Request) bool {
 	return p.ocisRegex.MatchString(r.Host)
-}
-
-func (p *proxy) isApiPath(path string) (bool, string) {
-	for match, trim := range apiMap {
-		if strings.HasPrefix(path, match) {
-			return true, trim
-		}
-	}
-	return false, ""
 }
 
 func (p *proxy) isOldInfra(path string, r *http.Request) bool {
