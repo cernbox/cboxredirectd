@@ -246,7 +246,6 @@ var knownWebPaths = []string{
 	"/robots.txt",
 	"/swanapi",
 	"/byoa",
-	"/cernbox/update",
 	"/cernbox/mobile/ocs/v1.php/apps/files_sharing/api",
 	"/cernbox/mobile/ocs/v2.php/apps/files_sharing/api",
 	"/cernbox/desktop/ocs/v1.php/apps/files_sharing/api",
@@ -266,7 +265,6 @@ var knownOldPaths = []string{
 	"/cernbox/mobile",
 	"/cernbox/webdav",
 	"/swanapi",
-	"/cernbox/update",
 	"/cernbox/doc",
 }
 
