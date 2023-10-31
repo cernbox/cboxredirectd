@@ -1,0 +1,49 @@
+# Copied from other cernbox projects
+# Ideally we would use rpmci and build for multiple platforms
+variables:
+  REPO_NAME: "gitlab.cern.ch/cernbox/cboxredirectd"
+
+before_script:
+  - mkdir -p $GOPATH/src/$(dirname $REPO_NAME)
+  - ln -svf $CI_PROJECT_DIR $GOPATH/src/$REPO_NAME
+  - cd $GOPATH/src/$REPO_NAME
+
+stages:
+  - build
+  - deploy
+
+compilation:
+  stage: build
+  image: gitlab-registry.cern.ch/linuxsupport/cc7-base:minimal
+  script:
+    - |
+      yum install -y tar gzip make rpm-build
+      # install golang 1.21.1
+      curl -L -O https://go.dev/dl/go1.21.1.linux-amd64.tar.gz
+      tar -C /usr/local -xzf go*.linux-amd64.tar.gz
+      export PATH=/usr/local/go/bin:$PATH
+
+      # compile
+      mkdir public
+      make rpm
+      cp cboxredirectd/*.rpm public
+  artifacts:
+    paths:
+      - public
+    expire_in: 1 week
+
+deployment:
+  stage: deploy
+  # Execute only on tag on master
+  only:
+    - tags
+  except:
+    - branches
+  image: gitlab-registry.cern.ch/ci-tools/ci-web-deployer:latest
+  script:
+    - |
+      echo "ssh -o StrictHostKeyChecking=no -o GSSAPITrustDns=yes -o GSSAPIAuthentication=yes -o GSSAPIDelegateCredentials=yes $EOS_ACCOUNT_USERNAME@lxplus.cern.ch createrepo --update $EOS_PATH" >> /sbin/deploy-eos-xrdcp.sh
+      deploy-eos
+  # do not run any globally defined before_script or after_script for this step
+  before_script: []
+  after_script: []
